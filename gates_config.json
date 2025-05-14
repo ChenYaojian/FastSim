@@ -1,0 +1,94 @@
+{
+    "gates": [
+        {
+            "name": "X",
+            "num_qubits": 1,
+            "is_parametric": false,
+            "matrix": [[0, 1], [1, 0]]
+        },
+        {
+            "name": "Y",
+            "num_qubits": 1,
+            "is_parametric": false,
+            "matrix": [[0, "-1j"], ["1j", 0]]
+        },
+        {
+            "name": "Z",
+            "num_qubits": 1,
+            "is_parametric": false,
+            "matrix": [[1, 0], [0, -1]]
+        },
+        {
+            "name": "H",
+            "num_qubits": 1,
+            "is_parametric": false,
+            "matrix": [[0.7071, 0.7071], [0.7071, -0.7071]]
+        },
+        {
+            "name": "CNOT",
+            "num_qubits": 2,
+            "is_parametric": false,
+            "matrix": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]]
+        },
+        {
+            "name": "RX",
+            "num_qubits": 1,
+            "is_parametric": true,
+            "matrix_func": "lambda theta: [[cos(theta/2), -1j*sin(theta/2)], [-1j*sin(theta/2), cos(theta/2)]]"
+        },
+        {
+            "name": "RY",
+            "num_qubits": 1,
+            "is_parametric": true,
+            "matrix_func": "lambda theta: [[cos(theta/2), -sin(theta/2)], [sin(theta/2), cos(theta/2)]]"
+        },
+        {
+            "name": "RZ",
+            "num_qubits": 1,
+            "is_parametric": true,
+            "matrix_func": "lambda theta: [[exp(-1j*theta/2), 0], [0, exp(1j*theta/2)]]"
+        },
+        {
+            "name": "U",
+            "num_qubits": 1,
+            "is_parametric": true,
+            "matrix_func": "lambda theta: [[exp(-1j*theta/2), 0], [0, exp(1j*theta/2)]]"
+        },
+        {
+            "name": "CZ",
+            "num_qubits": 2,
+            "is_parametric": false,
+            "matrix": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, -1]]
+        },
+        {
+            "name": "SWAP",
+            "num_qubits": 2,
+            "is_parametric": false,
+            "matrix": [[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]]
+        },
+        {
+            "name": "ISWAP",
+            "num_qubits": 2,
+            "is_parametric": false,
+            "matrix": [[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]]
+        },
+        {
+            "name": "CSWAP",
+            "num_qubits": 2,
+            "is_parametric": false,
+            "matrix": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]]
+        },
+        {
+            "name": "FREDKIN",
+            "num_qubits": 2,
+            "is_parametric": false,
+            "matrix": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]]
+        },
+        {
+            "name": "TOFFOLI",
+            "num_qubits": 3,
+            "is_parametric": false,
+            "matrix": [[1, 0, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 0, 0, 1, 0]]
+        }
+    ]
+} 
