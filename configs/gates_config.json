@@ -34,19 +34,19 @@
             "name": "RX",
             "num_qubits": 1,
             "is_parametric": true,
-            "matrix_func": "lambda theta: [[cos(theta/2), -1j*sin(theta/2)], [-1j*sin(theta/2), cos(theta/2)]]"
+            "matrix_func": "[[cos(theta/2), -1j*sin(theta/2)], [-1j*sin(theta/2), cos(theta/2)]]"
         },
         {
             "name": "RY",
             "num_qubits": 1,
             "is_parametric": true,
-            "matrix_func": "lambda theta: [[cos(theta/2), -sin(theta/2)], [sin(theta/2), cos(theta/2)]]"
+            "matrix_func": "[[cos(theta/2), -sin(theta/2)], [sin(theta/2), cos(theta/2)]]"
         },
         {
             "name": "RZ",
             "num_qubits": 1,
             "is_parametric": true,
-            "matrix_func": "lambda theta: [[exp(-1j*theta/2), 0], [0, exp(1j*theta/2)]]"
+            "matrix_func": "[[exp(-1j*theta/2), 0], [0, exp(1j*theta/2)]]"
         },
         {
             "name": "U",

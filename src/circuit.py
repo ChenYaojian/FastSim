@@ -64,11 +64,22 @@ class ParametricGate(QuantumGate):
             'np': np
         }
         
-        # 将字符串转换为可执行的函数
         try:
-            # 使用eval安全地执行字符串
-            func = eval(f"lambda theta: {func_str}", namespace)
-            return func
+            # 移除lambda前缀（如果存在）
+            if func_str.startswith('lambda'):
+                func_str = func_str[6:].strip()
+            
+            # 创建函数定义
+            func_def = f"def matrix_func(theta):\n    return {func_str}"
+            
+            # 创建新的命名空间
+            local_namespace = {}
+            
+            # 执行函数定义
+            exec(func_def, namespace, local_namespace)
+            
+            # 返回定义的函数
+            return local_namespace['matrix_func']
         except Exception as e:
             raise ValueError(f"Error parsing matrix function: {e}")
 
@@ -78,12 +89,15 @@ class ParametricGate(QuantumGate):
             if params is None:
                 raise ValueError(f"Gate {self.name} requires parameters")
             if self.matrix_func:
-                # 使用解析后的函数计算矩阵
-                matrix = self.matrix_func(params)
-                # 确保返回的是torch.Tensor类型
-                if not isinstance(matrix, torch.Tensor):
-                    matrix = torch.tensor(matrix, dtype=torch.complex64)
-                return matrix
+                try:
+                    # 使用解析后的函数计算矩阵
+                    matrix = self.matrix_func(params)
+                    # 确保返回的是torch.Tensor类型
+                    if not isinstance(matrix, torch.Tensor):
+                        matrix = torch.tensor(matrix, dtype=torch.complex64)
+                    return matrix
+                except Exception as e:
+                    raise ValueError(f"Error computing matrix for gate {self.name}: {e}")
             else:
                 raise ValueError(f"No matrix function defined for gate {self.name}")
         else:
@@ -123,16 +137,6 @@ def load_gates_from_config(config_path: str):
                 class DynamicGate(ParametricGate):
                     def __init__(self, **kwargs):
                         super().__init__(gate_name, n_qubits, matrix_func_str=m_func, is_parametric=True)
-                    
-                    def get_matrix(self, params=None):
-                        if params is None:
-                            raise ValueError(f"Gate {gate_name} requires parameters")
-                        if self.matrix_func:
-                            matrix = self.matrix_func(params)
-                            if not isinstance(matrix, torch.Tensor):
-                                matrix = torch.tensor(matrix, dtype=torch.complex64)
-                            return matrix
-                        raise ValueError(f"No matrix function defined for gate {gate_name}")
                 return DynamicGate
             
             gate_class = create_parametric_gate_class(name, num_qubits, matrix_func)
