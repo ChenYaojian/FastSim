@@ -182,6 +182,8 @@ class Circuit(nn.Module):
             qubit_indices: 门操作作用的量子比特索引
             params: 参数化门的参数（如果有）
         """
+        if qubit_indices[0] >= self.num_qubits:
+            raise ValueError(f"Invalid qubit index: {qubit_indices[0]}")
         gate = QuantumGate.get_gate(gate_name)
         if gate.is_parametric and params is None:
             raise ValueError(f"Gate {gate_name} requires parameters")
@@ -196,13 +198,39 @@ class Circuit(nn.Module):
 
     def _apply_gate(self, state: torch.Tensor, gate: QuantumGate, 
                    qubit_indices: List[int], params: Union[torch.Tensor, None]) -> torch.Tensor:
-        """应用门操作到量子态"""
+        """应用门操作到量子态
+        
+        Args:
+            state: 当前量子态
+            gate: 要应用的量子门
+            qubit_indices: 门操作作用的量子比特索引
+            params: 参数化门的参数（如果有）
+            
+        Returns:
+            torch.Tensor: 应用门后的量子态
+        """
         # 获取门的矩阵表示
         matrix = gate.get_matrix(params)
+        gate_dim = 2**len(qubit_indices)
+        # 将state重塑为nqubit维的张量，每个维度的大小为2
+        state = state.view([2] * self.num_qubits)
+        # 根据gate作用的qubits，将state vector permute，然后reshape
+        permute_order = list(range(self.num_qubits))
+        for i, qubit in enumerate(qubit_indices):
+            permute_order[i], permute_order[qubit] = permute_order[qubit], permute_order[i]
+
+        # 重塑state为矩阵形式
+        reshaped_state = state.permute(permute_order).reshape(gate_dim, -1)
         
-        # 这里需要实现具体的门操作应用逻辑
-        # 可以使用张量积和矩阵乘法来实现
-        return state  # 临时返回，需要实现具体逻辑
+        # 执行矩阵乘法
+        new_state = torch.matmul(matrix, reshaped_state)
+        
+        # 将state permute回去
+        new_state = new_state.reshape([2] * self.num_qubits).permute(permute_order)
+        new_state = new_state.reshape(-1)
+        
+        return new_state
+       
 
     def draw(self, max_gates: int = 10, show_params: bool = True) -> str:
         """绘制量子电路图
