@@ -9,7 +9,6 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
 from src.circuit import Circuit, load_gates_from_config, QuantumGate
-from src.abs_circuit import AbstractCircuit, AbstractGate
 from src.state import StateType, AbstractState
 
 @pytest.fixture(scope="session", autouse=True)
@@ -42,12 +41,3 @@ def test_circuit(basic_gates):
     circuit.add_gate("U", [0], torch.tensor([np.pi/4, np.pi/4, np.pi/4]))
     return circuit
 
-@pytest.fixture
-def test_abs_circuit(test_circuit):
-    """创建测试用的抽象电路"""
-    abs_circuit = AbstractCircuit.from_circuit(test_circuit)
-    # 为参数化门提供默认参数
-    for gate in abs_circuit.gates:
-        if gate.is_parametric:
-            gate.params = torch.tensor([np.pi/4, np.pi/4, np.pi/4]) if hasattr(gate, 'param_names') and len(gate.param_names) == 3 else torch.tensor([np.pi/4])
-    return abs_circuit 

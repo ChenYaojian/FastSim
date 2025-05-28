@@ -9,7 +9,6 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
 from src.circuit import Circuit, load_gates_from_config, QuantumGate, ParametricGate
-from src.abs_circuit import AbstractCircuit, AbstractGate
 from src.state import StateType, AbstractState
 
 class TestCircuit:
