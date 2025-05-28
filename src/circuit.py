@@ -7,6 +7,7 @@ import json
 from typing import Dict, List, Union, Callable
 from abc import ABC, abstractmethod
 import math
+import inspect
 
 
 class QuantumGate(ABC):
@@ -42,18 +43,17 @@ class QuantumGate(ABC):
         return self.matrix
 
 class ParametricGate(QuantumGate):
-    """参数化量子门"""
-    def __init__(self, name: str, num_qubits: int, matrix_func_str: str = None, is_parametric: bool = False):
+    """参数化量子门，支持多参数"""
+    def __init__(self, name: str, num_qubits: int, matrix_func_str: str = None, is_parametric: bool = False, param_names: list = None):
         super().__init__(name, num_qubits, is_parametric=is_parametric)
+        self.param_names = param_names or []
         if matrix_func_str:
-            # 将字符串形式的函数转换为可执行的函数
-            self.matrix_func = self._parse_matrix_func(matrix_func_str)
+            self.matrix_func, self.param_names = self._parse_matrix_func(matrix_func_str, self.param_names)
         else:
             self.matrix_func = None
 
-    def _parse_matrix_func(self, func_str: str) -> Callable:
-        """解析字符串形式的矩阵函数"""
-        # 创建一个包含必要数学函数的命名空间
+    def _parse_matrix_func(self, func_str: str, param_names_from_json=None):
+        """解析字符串形式的矩阵函数，支持lambda表达式和多参数"""
         namespace = {
             'cos': torch.cos,
             'sin': torch.sin,
@@ -63,36 +63,45 @@ class ParametricGate(QuantumGate):
             'torch': torch,
             'np': np
         }
-        
         try:
-            # 移除lambda前缀（如果存在）
+            func_str = func_str.strip()
             if func_str.startswith('lambda'):
-                func_str = func_str[6:].strip()
-            
-            # 创建函数定义
-            func_def = f"def matrix_func(theta):\n    return {func_str}"
-            
-            # 创建新的命名空间
-            local_namespace = {}
-            
-            # 执行函数定义
-            exec(func_def, namespace, local_namespace)
-            
-            # 返回定义的函数
-            return local_namespace['matrix_func']
+                # 直接eval lambda表达式
+                matrix_func = eval(func_str, namespace)
+                # 自动提取参数名
+                sig = inspect.signature(matrix_func)
+                param_names = list(sig.parameters.keys())
+                return matrix_func, param_names
+            else:
+                # 兼容旧格式，假设单参数theta
+                def matrix_func(theta):
+                    return eval(func_str, {**namespace, 'theta': theta})
+                param_names = param_names_from_json or ['theta']
+                return matrix_func, param_names
         except Exception as e:
             raise ValueError(f"Error parsing matrix function: {e}")
 
-    def get_matrix(self, params: Union[torch.Tensor, None] = None) -> torch.Tensor:
-        """获取门的矩阵表示"""
+    def get_matrix(self, params: Union[torch.Tensor, list, tuple, dict, None] = None) -> torch.Tensor:
+        """获取门的矩阵表示，支持多参数"""
         if self.is_parametric:
             if params is None:
                 raise ValueError(f"Gate {self.name} requires parameters")
             if self.matrix_func:
                 try:
-                    # 使用解析后的函数计算矩阵
-                    matrix = self.matrix_func(params)
-                    # 确保返回的是torch.Tensor类型
+                    # 参数预处理：全部转为torch.tensor
+                    def to_tensor(x):
+                        return x if isinstance(x, torch.Tensor) else torch.tensor(x, dtype=torch.float32)
+                    if isinstance(params, dict):
+                        args = [to_tensor(params[k]) for k in self.param_names]
+                        matrix = self.matrix_func(*args)
+                    elif isinstance(params, (list, tuple)):
+                        args = [to_tensor(x) for x in params]
+                        matrix = self.matrix_func(*args)
+                    elif isinstance(params, torch.Tensor):
+                        args = [params] if params.ndim == 0 else [to_tensor(x) for x in params.tolist()]
+                        matrix = self.matrix_func(*args)
+                    else:
+                        raise ValueError(f"Unsupported parameter type: {type(params)}")
                     if not isinstance(matrix, torch.Tensor):
                         matrix = torch.tensor(matrix, dtype=torch.complex64)
                     return matrix
@@ -117,7 +126,7 @@ def _parse_complex_matrix(matrix):
 
 # 从配置文件加载门定义
 def load_gates_from_config(config_path: str):
-    """从配置文件加载门定义"""
+    """从配置文件加载门定义，支持多参数门"""
     with open(config_path, 'r') as f:
         config = json.load(f)
     
@@ -126,43 +135,31 @@ def load_gates_from_config(config_path: str):
         num_qubits = gate_info['num_qubits']
         is_parametric = gate_info.get('is_parametric', False)
         
-        # 创建门类
         if is_parametric:
             matrix_func = gate_info.get('matrix_func')
+            param_names = gate_info.get('param_names', None)
             if not matrix_func:
                 raise ValueError(f"Parametric gate {name} must have matrix_func defined")
-            
-            # 动态创建参数化门类
-            def create_parametric_gate_class(gate_name, n_qubits, m_func):
+            def create_parametric_gate_class(gate_name, n_qubits, m_func, param_names):
                 class DynamicGate(ParametricGate):
                     def __init__(self, **kwargs):
-                        super().__init__(gate_name, n_qubits, matrix_func_str=m_func, is_parametric=True)
+                        super().__init__(gate_name, n_qubits, matrix_func_str=m_func, is_parametric=True, param_names=param_names)
                 return DynamicGate
-            
-            gate_class = create_parametric_gate_class(name, num_qubits, matrix_func)
-            
+            gate_class = create_parametric_gate_class(name, num_qubits, matrix_func, param_names)
         else:
             matrix = gate_info.get('matrix')
             if not matrix:
                 raise ValueError(f"Non-parametric gate {name} must have matrix defined")
-            
-            # 解析矩阵中的复数
             matrix = _parse_complex_matrix(matrix)
-            
-            # 动态创建非参数化门类
             def create_non_parametric_gate_class(gate_name, n_qubits, m):
                 class DynamicGate(QuantumGate):
                     def __init__(self, **kwargs):
                         super().__init__(gate_name, n_qubits, is_parametric=False)
                         self.matrix = torch.tensor(m, dtype=torch.complex64)
-                    
                     def get_matrix(self, params=None):
                         return self.matrix
                 return DynamicGate
-            
             gate_class = create_non_parametric_gate_class(name, num_qubits, matrix)
-        
-        # 注册门类
         QuantumGate.register(name, num_qubits, is_parametric=is_parametric)(gate_class)
 
 
@@ -189,9 +186,10 @@ class Circuit(nn.Module):
             raise ValueError(f"Gate {gate_name} requires parameters")
         self.gates.append((gate, qubit_indices, params))
 
-    def forward(self):
+    def forward(self, state: torch.Tensor = None):
         """执行量子电路"""
-        state = self.qubits
+        if state is None:
+            state = self.qubits
         for gate, qubit_indices, params in self.gates:
             state = self._apply_gate(state, gate, qubit_indices, params)
         return state
@@ -233,69 +231,133 @@ class Circuit(nn.Module):
        
 
     def draw(self, max_gates: int = 10, show_params: bool = True) -> str:
-        """绘制量子电路图
-        
-        Args:
-            max_gates: 显示的最大门数量，超过此数量将使用省略号
-            show_params: 是否显示参数化门的参数值
-        
-        Returns:
-            str: 电路图的字符串表示
+        """
+        绘制量子电路图（美化版）
+        - 每个qubit一行
+        - 单比特门用[门名]方框
+        - 双比特受控门用●和⊕/Z区分控制和目标
+        - 其他多比特门用跨多行的|门名|方框
         """
         if not self.gates:
             return "Empty circuit"
-
-        # 计算需要显示的门
+        # 只显示max_gates个门
+        gates_to_show = self.gates
         if len(self.gates) > max_gates:
             first_half = self.gates[:max_gates//2]
             second_half = self.gates[-(max_gates//2):]
             gates_to_show = first_half + [None] + second_half
-        else:
-            gates_to_show = self.gates
-
-        # 创建电路图的行
-        lines = []
-        for qubit in range(self.num_qubits):
-            line = []
-            for gate_info in gates_to_show:
-                if gate_info is None:
-                    line.append("...")
+        n = self.num_qubits
+        # 初始化每行
+        lines = [["──"] * len(gates_to_show) for _ in range(n)]
+        # 受控门类型
+        controlled_gates = {"CNOT": "⊕", "CZ": "Z"}
+        for col, gate_info in enumerate(gates_to_show):
+            if gate_info is None:
+                for i in range(n):
+                    lines[i][col] = " ... "
+                continue
+            gate, qubit_indices, params = gate_info
+            name = gate.name
+            # 参数化门显示参数
+            if gate.is_parametric and show_params and params is not None:
+                if isinstance(params, torch.Tensor):
+                    param_value = params.tolist()
+                    param_str = ",".join([f"{p:.2f}" for p in (param_value if isinstance(param_value, list) else [param_value])])
                 else:
-                    gate, qubit_indices, params = gate_info
-                    if qubit in qubit_indices:
-                        # 获取门的表示
-                        gate_str = gate.name
-                        if gate.is_parametric and show_params and params is not None:
-                            if isinstance(params, torch.Tensor):
-                                param_value = params.item()
-                            else:
-                                param_value = params
-                            gate_str += f"({param_value:.2f})"
-                        
-                        # 对于多量子比特门，添加连接线
-                        if len(qubit_indices) > 1:
-                            if qubit == min(qubit_indices):
-                                line.append("┌─" + gate_str + "─┐")
-                            elif qubit == max(qubit_indices):
-                                line.append("└─" + "─" * len(gate_str) + "─┘")
-                            else:
-                                line.append("│ " + " " * len(gate_str) + " │")
-                        else:
-                            line.append("─" + gate_str + "─")
-                    else:
-                        # 对于不在门操作中的量子比特，添加空线
-                        if len(qubit_indices) > 1 and min(qubit_indices) < qubit < max(qubit_indices):
-                            line.append("│ " + " " * len(gate.name) + " │")
-                        else:
-                            line.append("─" + "─" * len(gate.name) + "─")
-            lines.append("".join(line))
-
-        # 添加量子比特标签
-        labeled_lines = []
+                    param_str = str(params)
+                display_name = f"{name}({param_str})"
+            else:
+                display_name = name
+            # 单比特门
+            if len(qubit_indices) == 1:
+                idx = qubit_indices[0]
+                lines[idx][col] = f"[{display_name}]"
+            # 双比特门
+            elif len(qubit_indices) == 2:
+                q0, q1 = sorted(qubit_indices)
+                # 判断是否为受控门
+                if name in controlled_gates:
+                    ctrl, tgt = qubit_indices
+                    # 画连线
+                    for i in range(min(ctrl, tgt)+1, max(ctrl, tgt)):
+                        lines[i][col] = "  │  "
+                    # 控制位
+                    lines[ctrl][col] = "  ●  "
+                    # 目标位
+                    lines[tgt][col] = f"  {controlled_gates[name]}  "
+                else:
+                    # 非受控双比特门，画跨两行的方框
+                    for i in range(n):
+                        if i == q0:
+                            lines[i][col] = f"┌─{display_name}─┐"
+                        elif i == q1:
+                            lines[i][col] = f"└─{'─'*len(display_name)}─┘"
+                        elif q0 < i < q1:
+                            lines[i][col] = f"│ {' '*len(display_name)} │"
+            # 多比特门
+            else:
+                qmin, qmax = min(qubit_indices), max(qubit_indices)
+                for i in range(n):
+                    if i == qmin:
+                        lines[i][col] = f"┌─{display_name}─┐"
+                    elif i == qmax:
+                        lines[i][col] = f"└─{'─'*len(display_name)}─┘"
+                    elif qmin < i < qmax:
+                        lines[i][col] = f"│ {' '*len(display_name)} │"
+        # 拼接
+        result = []
         for i, line in enumerate(lines):
-            labeled_lines.append(f"q{i}: {line}")
-
-        return "\n".join(labeled_lines)
+            result.append(f"q{i}: " + "".join(line))
+        return "\n".join(result)
+        
+    @staticmethod
+    def from_json(json_path_or_dict):
+        """
+        从json文件或dict构建Circuit实例。
+        json格式要求：
+        {
+            "0": [ {"gate_name": ..., "parameters": ..., "qubits": [...]}, ...],
+            "1": [...],
+            ...
+        }
+        """
+        # 加载json
+        if isinstance(json_path_or_dict, str):
+            with open(json_path_or_dict, 'r') as f:
+                circuit_data = json.load(f)
+        else:
+            circuit_data = json_path_or_dict
+        # 统计最大qubit数
+        max_qubit = -1
+        for layer in circuit_data.values():
+            for gate in layer:
+                max_in_gate = max(gate["qubits"])
+                if max_in_gate > max_qubit:
+                    max_qubit = max_in_gate
+        num_qubits = max_qubit + 1
+        circuit = Circuit(num_qubits)
+        # 按层顺序添加门
+        for layer_idx in sorted(circuit_data, key=lambda x: int(x)):
+            for gate in circuit_data[layer_idx]:
+                gate_name = gate["gate_name"]
+                if gate_name in {"MX", "MY", "MZ"}:
+                    continue  # 跳过测量操作
+                qubits = gate["qubits"]
+                params = gate.get("parameters", None)
+                # 如果参数是空dict，视为None
+                if isinstance(params, dict) and not params:
+                    params = None
+                # 如果参数是dict且有内容，按门定义顺序转为list
+                if isinstance(params, dict) and params:
+                    # 获取门的param_names
+                    gate_obj = QuantumGate.get_gate(gate_name)
+                    param_names = getattr(gate_obj, 'param_names', list(params.keys()))
+                    params = [params[k] for k in param_names]
+                    params = torch.tensor(params, dtype=torch.float32) if len(params) > 0 else None
+                elif isinstance(params, (list, tuple)):
+                    params = torch.tensor(params, dtype=torch.float32)
+                circuit.add_gate(gate_name, qubits, params)
+        return circuit
         
         
         

@@ -34,31 +34,29 @@
             "name": "RX",
             "num_qubits": 1,
             "is_parametric": true,
-            "matrix_func": "[[cos(theta/2), -1j*sin(theta/2)], [-1j*sin(theta/2), cos(theta/2)]]"
+            "matrix_func": "lambda theta: [[cos(theta/2), -1j*sin(theta/2)], [-1j*sin(theta/2), cos(theta/2)]]",
+            "param_names": ["theta"]
         },
         {
             "name": "RY",
             "num_qubits": 1,
             "is_parametric": true,
-            "matrix_func": "[[cos(theta/2), -sin(theta/2)], [sin(theta/2), cos(theta/2)]]"
+            "matrix_func": "lambda theta: [[cos(theta/2), -sin(theta/2)], [sin(theta/2), cos(theta/2)]]",
+            "param_names": ["theta"]
         },
         {
             "name": "RZ",
             "num_qubits": 1,
             "is_parametric": true,
-            "matrix_func": "[[exp(-1j*theta/2), 0], [0, exp(1j*theta/2)]]"
-        },
-        {
-            "name": "U",
-            "num_qubits": 1,
-            "is_parametric": true,
-            "matrix_func": "[[exp(-1j*theta/2), 0], [0, exp(1j*theta/2)]]"
+            "matrix_func": "lambda theta: [[exp(-1j*theta/2), 0], [0, exp(1j*theta/2)]]",
+            "param_names": ["theta"]
         },
         {
             "name": "ZZ",
             "num_qubits": 2,
             "is_parametric": true,
-            "matrix_func": "[[exp(-1j*theta/2), 0, 0, 0], [0, exp(-1j*theta/2), 0, 0], [0, 0, exp(1j*theta/2), 0], [0, 0, 0, exp(1j*theta/2)]]"
+            "matrix_func": "lambda theta, phi: [[exp(-1j*theta/2), 0, 0, 0], [0, exp(-1j*theta/2), 0, 0], [0, 0, exp(1j*phi/2), 0], [0, 0, 0, exp(1j*phi/2)]]",
+            "param_names": ["theta", "phi"]
         },
         {
             "name": "CZ",
@@ -95,6 +93,13 @@
             "num_qubits": 3,
             "is_parametric": false,
             "matrix": [[1, 0, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 0, 0, 1, 0]]
+        },
+        {
+            "name": "U",
+            "num_qubits": 1,
+            "is_parametric": true,
+            "matrix_func": "lambda alpha, beta, gamma: [[exp(1j*alpha)*cos(gamma), -exp(-1j*beta)*sin(gamma)], [exp(1j*beta)*sin(gamma), exp(-1j*alpha)*cos(gamma)]]",
+            "param_names": ["alpha", "beta", "gamma"]
         }
     ]
 } 

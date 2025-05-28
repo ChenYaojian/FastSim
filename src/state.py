@@ -2,6 +2,7 @@ import torch
 from abc import ABC, abstractmethod
 from typing import Optional, List, Union, Dict, Type
 from enum import Enum
+import numpy as np
 
 class StateType(Enum):
     """量子态表示类型"""
@@ -377,6 +378,75 @@ class StateVector(AbstractState):
         overlap = torch.vdot(self.state_vector, other_state.state_vector)
         fidelity = torch.abs(overlap) ** 2
         return fidelity
+
+    def tofile(self, filename: str) -> None:
+        """将量子态保存到二进制文件
+        
+        Args:
+            filename: 输出文件名
+            
+        文件格式：
+        - 前4字节：量子比特数量（uint32）
+        - 接下来8字节：数据类型信息（uint64，表示torch.dtype的数值）
+        - 剩余字节：态向量数据（复数数组）
+        """
+        with open(filename, 'wb') as f:
+            # 写入量子比特数量（uint32）
+            f.write(np.uint32(self.num_qubits).tobytes())
+            
+            # 写入数据类型信息（uint64）
+            # 将dtype转换为字符串，然后提取数值部分
+            dtype_str = str(self.dtype)
+            if 'complex64' in dtype_str:
+                dtype_value = 64
+            elif 'complex128' in dtype_str:
+                dtype_value = 128
+            else:
+                raise ValueError(f"不支持的数据类型: {dtype_str}")
+            f.write(np.uint64(dtype_value).tobytes())
+            
+            # 写入态向量数据
+            f.write(self.state_vector.numpy().tobytes())
+    
+    @classmethod
+    def fromfile(cls, filename: str) -> 'StateVector':
+        """从二进制文件加载量子态
+        
+        Args:
+            filename: 输入文件名
+            
+        Returns:
+            StateVector: 加载的量子态实例
+            
+        Raises:
+            ValueError: 如果文件格式不正确
+        """
+        with open(filename, 'rb') as f:
+            # 读取量子比特数量
+            num_qubits = np.frombuffer(f.read(4), dtype=np.uint32)[0]
+            
+            # 读取数据类型信息
+            dtype_value = np.frombuffer(f.read(8), dtype=np.uint64)[0]
+            # 根据数值确定dtype
+            if dtype_value == 64:
+                dtype = torch.complex64
+            elif dtype_value == 128:
+                dtype = torch.complex128
+            else:
+                raise ValueError(f"不支持的数据类型值: {dtype_value}")
+            
+            # 创建StateVector实例
+            state = cls(num_qubits, dtype=dtype)
+            
+            # 读取态向量数据
+            data = np.frombuffer(f.read(), dtype=np.complex64)
+            if len(data) != 2**num_qubits:
+                raise ValueError(f"文件数据长度 {len(data)} 与量子比特数量 {num_qubits} 不匹配")
+            
+            # 初始化态向量
+            state.state_vector = torch.from_numpy(data).to(dtype=dtype)
+            
+            return state
 
 @AbstractState.register_state_class(StateType.MPS)
 class MPS(AbstractState):
