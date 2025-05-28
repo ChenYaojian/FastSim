@@ -1,0 +1,11 @@
+name: fastsv
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - numpy>=1.26.4
+  - pytorch>=2.1.0
+  - pip
+  - pip:
+      - pytest
