@@ -164,16 +164,26 @@ def load_gates_from_config(config_path: str):
 
 
 class Circuit(nn.Module):
-    def __init__(self, num_qubits: int):
+    def __init__(self, num_qubits: int, device: torch.device = None):
         super(Circuit, self).__init__()
         self.num_qubits = num_qubits
         self.gates = []  # 存储门操作序列
         self.parameters_dict = nn.ParameterDict()  # 存储可训练参数
         self.param_gate_indices = []  # 记录参数化门的索引
         
+        # 设置device
+        self.device = device if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
         # 初始化量子态为|0⟩态
-        self.qubits = torch.zeros(2**num_qubits, dtype=torch.complex64)
+        self.qubits = torch.zeros(2**num_qubits, dtype=torch.complex64, device=self.device)
         self.qubits[0] = 1.0
+
+    def to(self, device: torch.device):
+        """将电路移动到指定设备"""
+        super().to(device)
+        self.device = device
+        self.qubits = self.qubits.to(device)
+        return self
 
     def forward(self, x: torch.Tensor = None) -> torch.Tensor:
         """执行量子电路
@@ -187,6 +197,9 @@ class Circuit(nn.Module):
         if x is None:
             # 如果没有输入，使用|0⟩态
             x = self.qubits.unsqueeze(0)  # 添加batch维度
+        else:
+            # 确保输入在正确的设备上
+            x = x.to(self.device)
         
         # 应用量子门
         for gate, qubit_indices, param_name in self.gates:
@@ -215,6 +228,11 @@ class Circuit(nn.Module):
         batch_size = state.size(0)
         # 获取门的矩阵表示
         matrix = gate.get_matrix(params)
+        if not isinstance(matrix, torch.Tensor):
+            matrix = torch.tensor(matrix, dtype=torch.complex64, device=self.device)
+        elif matrix.device != self.device:
+            matrix = matrix.to(self.device)
+            
         gate_dim = 2**len(qubit_indices)
         
         # 对每个样本分别处理
@@ -258,12 +276,12 @@ class Circuit(nn.Module):
         # 如果是参数化门，将参数转换为nn.Parameter
         if gate.is_parametric:
             if isinstance(params, (list, tuple)):
-                params = torch.tensor(params, dtype=torch.float32)
+                params = torch.tensor(params, dtype=torch.float32, device=self.device)
             elif isinstance(params, dict):
                 # 如果参数是dict，按门定义顺序转为list
                 param_names = getattr(gate, 'param_names', list(params.keys()))
                 params = [params[k] for k in param_names]
-                params = torch.tensor(params, dtype=torch.float32)
+                params = torch.tensor(params, dtype=torch.float32, device=self.device)
             
             # 创建唯一的参数名
             param_name = f"{gate_name}_{len(self.gates)}"

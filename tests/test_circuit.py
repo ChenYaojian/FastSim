@@ -94,5 +94,64 @@ def test_bell_state_amplitudes():
     for i in range(4):
         assert torch.allclose(state[0, i], expected[i], atol=1e-6), f"振幅不符: {i}, {state[0, i]}, {expected[i]}"
 
+def test_circuit_device():
+    """测试电路在不同设备上的运行"""
+    # 测试CPU
+    circuit_cpu = Circuit(2, device=torch.device('cpu'))
+    state_cpu = circuit_cpu.forward()
+    assert state_cpu.device.type == 'cpu'
+    
+    # 测试GPU（如果可用）
+    if torch.cuda.is_available():
+        circuit_gpu = Circuit(2, device=torch.device('cuda'))
+        state_gpu = circuit_gpu.forward()
+        assert state_gpu.device.type == 'cuda'
+        
+        # 测试设备迁移
+        circuit_cpu.to('cuda')
+        state = circuit_cpu.forward()
+        assert state.device.type == 'cuda'
+        
+        circuit_cpu.to('cpu')
+        state = circuit_cpu.forward()
+        assert state.device.type == 'cpu'
+
+def test_circuit_device_consistency():
+    """测试电路在不同设备上的一致性"""
+    circuit_cpu = Circuit(2, device=torch.device('cpu'))
+    circuit_cpu.add_gate("H", [0])
+    circuit_cpu.add_gate("CNOT", [0, 1])
+    state_cpu = circuit_cpu.forward()
+    
+    if torch.cuda.is_available():
+        circuit_gpu = Circuit(2, device=torch.device('cuda'))
+        circuit_gpu.add_gate("H", [0])
+        circuit_gpu.add_gate("CNOT", [0, 1])
+        state_gpu = circuit_gpu.forward()
+        
+        # 将GPU结果移回CPU进行比较
+        state_gpu_cpu = state_gpu.cpu()
+        assert torch.allclose(state_cpu, state_gpu_cpu, atol=1e-6)
+
+def test_circuit_device_parameters():
+    """测试参数化门在不同设备上的行为"""
+    circuit = Circuit(2, device=torch.device('cpu'))
+    circuit.add_gate("RX", [0], [0.1])
+    circuit.add_gate("RY", [1], [0.2])
+    
+    # 检查参数是否在正确的设备上
+    for param_name, param in circuit.parameters_dict.items():
+        assert param.device.type == 'cpu'
+    
+    if torch.cuda.is_available():
+        circuit.to('cuda')
+        # 检查参数是否被正确移动到GPU
+        for param_name, param in circuit.parameters_dict.items():
+            assert param.device.type == 'cuda'
+        
+        # 执行前向传播
+        state = circuit.forward()
+        assert state.device.type == 'cuda'
+
 if __name__ == "__main__":
     pytest.main()
