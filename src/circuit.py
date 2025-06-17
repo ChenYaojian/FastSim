@@ -168,8 +168,78 @@ class Circuit(nn.Module):
         super(Circuit, self).__init__()
         self.num_qubits = num_qubits
         self.gates = []  # 存储门操作序列
-        self.qubits = torch.zeros((2**num_qubits,), dtype=torch.complex64)
-        self.qubits[0] = 1.0  # 初始化为|0⟩态
+        self.parameters_dict = nn.ParameterDict()  # 存储可训练参数
+        self.param_gate_indices = []  # 记录参数化门的索引
+        
+        # 初始化量子态为|0⟩态
+        self.qubits = torch.zeros(2**num_qubits, dtype=torch.complex64)
+        self.qubits[0] = 1.0
+
+    def forward(self, x: torch.Tensor = None) -> torch.Tensor:
+        """执行量子电路
+        
+        Args:
+            x: 输入量子态，形状为 [batch_size, 2**num_qubits]
+            
+        Returns:
+            torch.Tensor: 输出量子态，形状为 [batch_size, 2**num_qubits]
+        """
+        if x is None:
+            # 如果没有输入，使用|0⟩态
+            x = self.qubits.unsqueeze(0)  # 添加batch维度
+        
+        # 应用量子门
+        for gate, qubit_indices, param_name in self.gates:
+            # 如果是参数化门，从parameters_dict获取参数
+            if isinstance(param_name, str) and param_name in self.parameters_dict:
+                params = self.parameters_dict[param_name]
+            else:
+                params = param_name
+            x = self._apply_gate(x, gate, qubit_indices, params)
+        
+        return x
+
+    def _apply_gate(self, state: torch.Tensor, gate: QuantumGate, 
+                   qubit_indices: List[int], params: Union[torch.Tensor, None]) -> torch.Tensor:
+        """应用门操作到量子态
+        
+        Args:
+            state: 当前量子态，形状为 [batch_size, 2**num_qubits]
+            gate: 要应用的量子门
+            qubit_indices: 门操作作用的量子比特索引
+            params: 参数化门的参数（如果有）
+            
+        Returns:
+            torch.Tensor: 应用门后的量子态，形状为 [batch_size, 2**num_qubits]
+        """
+        batch_size = state.size(0)
+        # 获取门的矩阵表示
+        matrix = gate.get_matrix(params)
+        gate_dim = 2**len(qubit_indices)
+        
+        # 对每个样本分别处理
+        new_states = []
+        for i in range(batch_size):
+            # 将单个样本的state重塑为nqubit维的张量
+            single_state = state[i].view([2] * self.num_qubits)
+            
+            # 根据gate作用的qubits，将state vector permute，然后reshape
+            permute_order = list(range(self.num_qubits))
+            for j, qubit in enumerate(qubit_indices):
+                permute_order[j], permute_order[qubit] = permute_order[qubit], permute_order[j]
+            
+            # 重塑state为矩阵形式
+            reshaped_state = single_state.permute(permute_order).reshape(gate_dim, -1)
+            
+            # 执行矩阵乘法
+            new_state = torch.matmul(matrix, reshaped_state)
+            
+            # 将state permute回去
+            new_state = new_state.reshape([2] * self.num_qubits).permute(permute_order)
+            new_states.append(new_state.reshape(-1))
+        
+        # 将处理后的状态堆叠成batch
+        return torch.stack(new_states)
 
     def add_gate(self, gate_name: str, qubit_indices: List[int], params: Union[torch.Tensor, None] = None):
         """添加门操作到电路
@@ -184,51 +254,27 @@ class Circuit(nn.Module):
         gate = QuantumGate.get_gate(gate_name)
         if gate.is_parametric and params is None:
             raise ValueError(f"Gate {gate_name} requires parameters")
-        self.gates.append((gate, qubit_indices, params))
-
-    def forward(self, state: torch.Tensor = None):
-        """执行量子电路"""
-        if state is None:
-            state = self.qubits
-        for gate, qubit_indices, params in self.gates:
-            state = self._apply_gate(state, gate, qubit_indices, params)
-        return state
-
-    def _apply_gate(self, state: torch.Tensor, gate: QuantumGate, 
-                   qubit_indices: List[int], params: Union[torch.Tensor, None]) -> torch.Tensor:
-        """应用门操作到量子态
-        
-        Args:
-            state: 当前量子态
-            gate: 要应用的量子门
-            qubit_indices: 门操作作用的量子比特索引
-            params: 参数化门的参数（如果有）
             
-        Returns:
-            torch.Tensor: 应用门后的量子态
-        """
-        # 获取门的矩阵表示
-        matrix = gate.get_matrix(params)
-        gate_dim = 2**len(qubit_indices)
-        # 将state重塑为nqubit维的张量，每个维度的大小为2
-        state = state.view([2] * self.num_qubits)
-        # 根据gate作用的qubits，将state vector permute，然后reshape
-        permute_order = list(range(self.num_qubits))
-        for i, qubit in enumerate(qubit_indices):
-            permute_order[i], permute_order[qubit] = permute_order[qubit], permute_order[i]
-
-        # 重塑state为矩阵形式
-        reshaped_state = state.permute(permute_order).reshape(gate_dim, -1)
-        
-        # 执行矩阵乘法
-        new_state = torch.matmul(matrix, reshaped_state)
-        
-        # 将state permute回去
-        new_state = new_state.reshape([2] * self.num_qubits).permute(permute_order)
-        new_state = new_state.reshape(-1)
-        
-        return new_state
-       
+        # 如果是参数化门，将参数转换为nn.Parameter
+        if gate.is_parametric:
+            if isinstance(params, (list, tuple)):
+                params = torch.tensor(params, dtype=torch.float32)
+            elif isinstance(params, dict):
+                # 如果参数是dict，按门定义顺序转为list
+                param_names = getattr(gate, 'param_names', list(params.keys()))
+                params = [params[k] for k in param_names]
+                params = torch.tensor(params, dtype=torch.float32)
+            
+            # 创建唯一的参数名
+            param_name = f"{gate_name}_{len(self.gates)}"
+            # 将参数转换为nn.Parameter并存储
+            self.parameters_dict[param_name] = nn.Parameter(params)
+            # 记录参数化门的索引
+            self.param_gate_indices.append(len(self.gates))
+            # 使用参数名而不是实际参数值
+            self.gates.append((gate, qubit_indices, param_name))
+        else:
+            self.gates.append((gate, qubit_indices, params))
 
     def draw(self, max_gates: int = 10, show_params: bool = True) -> str:
         """

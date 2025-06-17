@@ -6,3 +6,4 @@ __pycache__
 *.pyz
 data/
 logs/
+*.pth

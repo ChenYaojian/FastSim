@@ -39,9 +39,9 @@ class TestCircuit:
     def test_forward(self, test_circuit):
         """测试前向传播"""
         state = test_circuit.forward()
-        assert state.shape == (8,)
+        assert state.shape == (1, 8)  # 现在包含batch维度
         assert torch.allclose(torch.abs(state), torch.abs(state))  # 检查是否为复数
-        assert torch.allclose(torch.sum(torch.abs(state)**2), torch.tensor(1.0), atol=1e-3)  # 检查归一化
+        assert torch.allclose(torch.sum(torch.abs(state)**2, dim=1), torch.ones(1), atol=1e-3)  # 检查归一化
     
     def test_draw(self, test_circuit):
         """测试电路绘制"""
@@ -67,7 +67,7 @@ def test_circuit_with_measurement():
     
     # 验证Bell态
     expected_state = torch.tensor([1, 0, 0, 1], dtype=torch.complex64) / np.sqrt(2)
-    assert torch.allclose(torch.abs(state), torch.abs(expected_state), atol=1e-6)
+    assert torch.allclose(torch.abs(state[0]), torch.abs(expected_state), atol=1e-6)  # 注意取第一个batch
 
 def test_circuit_error_handling():
     """测试电路错误处理"""
@@ -92,7 +92,7 @@ def test_bell_state_amplitudes():
     state = circuit.forward()
     expected = torch.tensor([1/np.sqrt(2), 0, 0, 1/np.sqrt(2)], dtype=torch.complex64)
     for i in range(4):
-        assert torch.allclose(state[i], expected[i], atol=1e-6), f"振幅不符: {i}, {state[i]}, {expected[i]}"
+        assert torch.allclose(state[0, i], expected[i], atol=1e-6), f"振幅不符: {i}, {state[0, i]}, {expected[i]}"
 
 if __name__ == "__main__":
     pytest.main()
