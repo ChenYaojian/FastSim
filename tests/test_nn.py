@@ -71,14 +71,16 @@ class QuantumNN(nn.Module):
         return quantum_state
         
     def forward(self, x):
+        # 将输入展平
         x = x.view(x.size(0), -1)
         
         # 编码为量子态
         quantum_state = self.encode_to_quantum_state(x)
         
-        # 通过量子电路
+        # 通过量子电路（作为神经网络层）
         quantum_state = self.circuit(quantum_state)
-
+        
+        # 将量子态转换为实数表示
         x = torch.cat([quantum_state.real, quantum_state.imag], dim=1)
         
         # 通过经典神经网络层
