@@ -15,15 +15,20 @@ import argparse
 
 # 添加项目根目录到路径
 import sys
-project_root = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
+sys.path.append(os.path.join(project_root, 'src'))
 
 from src.circuit import load_gates_from_config
-from src.vqe import VQE, PQC, load_circuit_from_file, create_pqc_from_config, create_random_hamiltonian
+from src.vqe import VQE, PQC, load_circuit_from_file, create_pqc_from_config, create_random_hamiltonian, create_heisenberg_hamiltonian, create_ising_hamiltonian, create_hubbard_hamiltonian
 
 
 def load_circuit_data(data_dir: str, circuit_name: str) -> Dict:
     """从data目录加载电路数据"""
+    # 确保路径相对于项目根目录
+    if not os.path.isabs(data_dir):
+        data_dir = os.path.join(project_root, data_dir)
+    
     circuit_path = os.path.join(data_dir, circuit_name)
     
     if os.path.isfile(circuit_path):
@@ -49,8 +54,16 @@ def create_hamiltonian(hamiltonian_type: str, num_qubits: int,
         J = kwargs.get('J', 1.0)
         h = kwargs.get('h', 0.0)
         return create_heisenberg_hamiltonian(num_qubits, J, h, device)
+    elif hamiltonian_type == "ising":
+        J = kwargs.get('J', 1.0)
+        h = kwargs.get('h', 0.0)
+        return create_ising_hamiltonian(num_qubits, J, h, device)
+    elif hamiltonian_type == "hubbard":
+        U = kwargs.get('U', 4.0)
+        t = kwargs.get('t', 1.0)
+        # 现在Hubbard模型直接使用量子比特数，每2个量子比特表示1个格点
+        return create_hubbard_hamiltonian(num_qubits, t, U, device)
     elif hamiltonian_type == "custom":
-        # 从文件加载自定义哈密顿量
         hamiltonian_path = kwargs.get('hamiltonian_path')
         if hamiltonian_path and os.path.exists(hamiltonian_path):
             hamiltonian_data = np.load(hamiltonian_path)
@@ -92,13 +105,17 @@ def main():
     parser = argparse.ArgumentParser(description='Execute VQE optimization')
     parser.add_argument('--data_dir', type=str, default='data', 
                        help='Directory containing circuit data')
-    parser.add_argument('--circuit_name', type=str, default='sim_cir_output_8layers',
+    parser.add_argument('--circuit_name', type=str, default='sim_cir_input_8layers.json',
                        help='Name of the circuit file/directory')
-    parser.add_argument('--num_qubits', type=int, default=4,
-                       help='Number of qubits')
-    parser.add_argument('--hamiltonian_type', type=str, default='random',
-                       choices=['random', 'heisenberg', 'custom'],
+    parser.add_argument('--num_qubits', type=int, default=None,
+                       help='Number of qubits (optional, will be auto-detected from circuit)')
+    parser.add_argument('--hamiltonian_type', type=str, default='hubbard',
+                       choices=['random', 'heisenberg', 'ising', 'hubbard', 'custom'],
                        help='Type of hamiltonian to use')
+    parser.add_argument('--U', type=float, default=4.0, help='Hubbard模型的U参数')
+    parser.add_argument('--t', type=float, default=1.0, help='Hubbard模型的t参数')
+    parser.add_argument('--J', type=float, default=1.0, help='Ising/Heisenberg模型的J参数')
+    parser.add_argument('--h', type=float, default=0.0, help='Ising/Heisenberg模型的h参数')
     parser.add_argument('--iterations', type=int, default=1000,
                        help='Number of optimization iterations')
     parser.add_argument('--learning_rate', type=float, default=0.01,
@@ -136,12 +153,19 @@ def main():
         
         # 创建PQC
         print("Creating parameterized quantum circuit...")
-        pqc = create_pqc_from_config(circuit_config, args.num_qubits, device)
+        pqc = create_pqc_from_config(circuit_config, device=device)
         print_circuit_info(pqc)
         
         # 创建哈密顿量
         print(f"Creating {args.hamiltonian_type} hamiltonian...")
-        hamiltonian = create_hamiltonian(args.hamiltonian_type, args.num_qubits, device)
+        # 对于Hubbard模型，使用电路的量子比特数作为格点数
+        # 对于其他模型，也使用电路的量子比特数
+        hamiltonian_qubits = pqc.num_qubits
+        print(f"Using {hamiltonian_qubits} qubits/sites for {args.hamiltonian_type} hamiltonian")
+        hamiltonian = create_hamiltonian(
+            args.hamiltonian_type, hamiltonian_qubits, device,
+            U=args.U, t=args.t, J=args.J, h=args.h
+        )
         print(f"Hamiltonian shape: {hamiltonian.shape}")
         
         # 创建VQE

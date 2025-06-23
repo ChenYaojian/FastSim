@@ -283,7 +283,10 @@ class Circuit(nn.Module):
             # 用register_parameter注册参数，确保梯度可传递
             for i, param_name in enumerate(gate_instance.param_names):
                 param_value = params[i] if params.dim() > 0 else params
-                param_tensor = torch.tensor(param_value, dtype=torch.float32, device=self.device, requires_grad=True)
+                if isinstance(param_value, torch.Tensor):
+                    param_tensor = param_value.detach().clone().requires_grad_(True)
+                else:
+                    param_tensor = torch.tensor(param_value, dtype=torch.float32, device=self.device, requires_grad=True)
                 param = nn.Parameter(param_tensor)
                 gate_instance.register_parameter(param_name, param)
             
