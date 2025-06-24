@@ -72,14 +72,19 @@ class QuantumGate(ABC, nn.Module):
             for j, qubit in enumerate(qubit_indices):
                 permute_order[j], permute_order[qubit] = permute_order[qubit], permute_order[j]
             
+            # 计算逆置换
+            inverse_permute_order = [0] * total_qubits
+            for j, pos in enumerate(permute_order):
+                inverse_permute_order[pos] = j
+            
             # 重塑state为矩阵形式
             reshaped_state = single_state.permute(permute_order).reshape(gate_dim, -1)
             
             # 执行矩阵乘法
             new_state = torch.matmul(matrix, reshaped_state)
             
-            # 将state permute回去
-            new_state = new_state.reshape([2] * total_qubits).permute(permute_order)
+            # 将state permute回去（使用逆置换）
+            new_state = new_state.reshape([2] * total_qubits).permute(inverse_permute_order)
             new_states.append(new_state.reshape(-1))
         
         # 将处理后的状态堆叠成batch
