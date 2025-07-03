@@ -6,6 +6,8 @@ import json
 import os
 from typing import Dict, List, Union, Callable, Optional
 from src.circuit import Circuit, load_gates_from_config, QuantumGate
+from src.hamiltonian import *
+from src.tool import get_hf_init_state
 
 
 class PQC(Circuit):
@@ -251,15 +253,6 @@ def create_pqc_from_config(circuit_config: Dict, num_qubits: int = None,
     return pqc
 
 
-def create_random_hamiltonian(num_qubits: int, device: torch.device = None) -> torch.Tensor:
-    """创建随机哈密顿量（用于测试）"""
-    dim = 2 ** num_qubits
-    # 创建随机厄米矩阵
-    H = torch.randn(dim, dim, dtype=torch.complex64, device=device)
-    H = (H + H.conj().transpose(0, 1)) / 2  # 确保厄米性
-    return H
-
-
 def create_heisenberg_hamiltonian(num_qubits: int, J: float = 1.0, 
                                  h: float = 0.0, device: torch.device = None):
     """创建海森堡模型哈密顿量，大系统使用黑盒矩阵-向量乘法"""
@@ -270,362 +263,223 @@ def create_heisenberg_hamiltonian(num_qubits: int, J: float = 1.0,
         print(f"Large system detected ({num_qubits} qubits), using black-box matrix-vector multiplication")
         return HeisenbergHamiltonianOperator(num_qubits, J, h, device)
     
-    # 小系统使用密集矩阵（保持原有逻辑）
+    # 小系统使用密集矩阵
     print(f"Small system ({num_qubits} qubits), using dense matrix")
     H = torch.zeros(dim, dim, dtype=torch.complex64, device=device)
     
-    # 这里简化实现，实际应用中需要更复杂的构造
-    # 对于小系统，可以直接构造完整的哈密顿量矩阵
+    # Pauli矩阵
+    I = torch.eye(2, dtype=torch.complex64, device=device)
+    X = torch.tensor([[0, 1], [1, 0]], dtype=torch.complex64, device=device)
+    Y = torch.tensor([[0, -1j], [1j, 0]], dtype=torch.complex64, device=device)
+    Z = torch.tensor([[1, 0], [0, -1]], dtype=torch.complex64, device=device)
     
     # 添加相互作用项 J * (σx⊗σx + σy⊗σy + σz⊗σz)
     for i in range(num_qubits - 1):
-        # 这里需要实现具体的泡利矩阵张量积
-        # 简化版本：使用随机矩阵模拟
-        interaction = torch.randn(dim, dim, dtype=torch.complex64, device=device) * J
-        interaction = (interaction + interaction.conj().transpose(0, 1)) / 2
-        H += interaction
-    
-    # 添加外场项 h * σz
-    for i in range(num_qubits):
-        # 简化版本
-        field_term = torch.randn(dim, dim, dtype=torch.complex64, device=device) * h
-        field_term = (field_term + field_term.conj().transpose(0, 1)) / 2
-        H += field_term
-    
-    return H
-
-
-class HeisenbergHamiltonianOperator:
-    """
-    海森堡模型哈密顿量-向量乘法黑盒，不存储矩阵，只实现 H @ v
-    """
-    def __init__(self, num_qubits, J=1.0, h=0.0, device=None):
-        self.num_qubits = num_qubits
-        self.J = J
-        self.h = h
-        self.device = device
-        self.dim = 2 ** num_qubits
-        self.shape = (self.dim, self.dim)  # 兼容主流程打印
-
-    def __matmul__(self, v):
-        if isinstance(v, torch.Tensor):
-            v_np = v.detach().cpu().numpy()
-        else:
-            v_np = v
+        # σx⊗σx 项
+        ops = [I] * num_qubits
+        ops[i] = X
+        ops[i+1] = X
+        term = ops[0]
+        for op in ops[1:]:
+            term = torch.kron(term, op)
+        H += J * term
         
-        # 确保输入是2D数组
-        if v_np.ndim == 1:
-            v_np = v_np.reshape(1, -1)  # [1, dim]
+        # σy⊗σy 项
+        ops = [I] * num_qubits
+        ops[i] = Y
+        ops[i+1] = Y
+        term = ops[0]
+        for op in ops[1:]:
+            term = torch.kron(term, op)
+        H += J * term
         
-        batch, dim = v_np.shape
-        if dim != self.dim:
-            raise ValueError(f"Vector dimension {dim} does not match hamiltonian dimension {self.dim}")
-        
-        out = np.zeros_like(v_np, dtype=np.complex64)
-        
-        for b in range(batch):
-            for state in range(dim):
-                val = 0.0
-                
-                # 相互作用项：J * (σx⊗σx + σy⊗σy + σz⊗σz)
-                for i in range(self.num_qubits - 1):
-                    # σx⊗σx 项
-                    # 翻转第i和i+1位
-                    flipped_state = state ^ ((1 << i) | (1 << (i+1)))
-                    val += self.J * v_np[b, flipped_state]
-                    
-                    # σy⊗σy 项（带相位）
-                    # 翻转第i和i+1位，并添加相位因子
-                    phase = 1.0
-                    if ((state >> i) & 1) != ((state >> (i+1)) & 1):
-                        phase = -1.0
-                    val += self.J * phase * v_np[b, flipped_state]
-                    
-                    # σz⊗σz 项
-                    # 对角项，根据第i和i+1位的值确定符号
-                    sign = 1.0
-                    if ((state >> i) & 1) == ((state >> (i+1)) & 1):
-                        sign = -1.0
-                    val += self.J * sign * v_np[b, state]
-                
-                # 外场项：h * σz
-                for i in range(self.num_qubits):
-                    # 根据第i位的值确定符号
-                    sign = 1.0 if ((state >> i) & 1) == 0 else -1.0
-                    val += self.h * sign * v_np[b, state]
-                
-                out[b, state] = val
-        
-        out_tensor = torch.tensor(out, dtype=torch.complex64, device=self.device)
-        if v.ndim == 1:
-            return out_tensor[0]
-        return out_tensor
-
-
-def create_ising_hamiltonian(num_qubits: int, J: float = 1.0, h: float = 0.0, device: torch.device = None) -> torch.Tensor:
-    """创建一维横场Ising模型哈密顿量: H = -J Σ σz_i σz_{i+1} - h Σ σx_i"""
-    dim = 2 ** num_qubits
-    H = torch.zeros(dim, dim, dtype=torch.complex64, device=device)
-    # Pauli matrices
-    I = torch.eye(2, dtype=torch.complex64, device=device)
-    X = torch.tensor([[0, 1], [1, 0]], dtype=torch.complex64, device=device)
-    Z = torch.tensor([[1, 0], [0, -1]], dtype=torch.complex64, device=device)
-    # -J Σ σz_i σz_{i+1}
-    for i in range(num_qubits - 1):
+        # σz⊗σz 项
         ops = [I] * num_qubits
         ops[i] = Z
         ops[i+1] = Z
         term = ops[0]
         for op in ops[1:]:
             term = torch.kron(term, op)
-        H -= J * term
-    # -h Σ σx_i
+        H += J * term
+    
+    # 添加外场项 h * σz
     for i in range(num_qubits):
         ops = [I] * num_qubits
-        ops[i] = X
+        ops[i] = Z
         term = ops[0]
         for op in ops[1:]:
             term = torch.kron(term, op)
-        H -= h * term
+        H += h * term
+    
     return H
 
 
-def create_sparse_hubbard_hamiltonian(num_qubits: int, t: float = 1.0, U: float = 4.0, device: torch.device = None) -> torch.Tensor:
-    """创建稀疏Hubbard模型哈密顿量（适用于大系统）"""
-    try:
-        import scipy.sparse as sp
-        from scipy.sparse import csr_matrix
-    except ImportError:
-        print("Warning: scipy not available, falling back to dense matrix")
-        return create_hubbard_hamiltonian(num_qubits, t, U, device)
-    
-    dim = 2 ** num_qubits
-    print(f"Creating sparse Hubbard hamiltonian with dimension {dim}")
-    
-    # 计算格点数（每2个量子比特表示1个格点）
-    num_sites = num_qubits // 2
-    if num_qubits % 2 != 0:
-        print(f"Warning: Odd number of qubits ({num_qubits}), using {num_sites} sites")
-    
-    # 使用列表存储非零元素
-    rows, cols, values = [], [], []
-    
-    # 添加相互作用项 U * n↑ * n↓ (双占据能量)
-    for site in range(num_sites):
-        q1, q2 = 2*site, 2*site+1
-        if q2 < num_qubits:
-            # 找到所有双占据态 |↑↓⟩
-            for state in range(dim):
-                # 检查第q1和q2位是否都是1
-                if (state >> q1) & 1 and (state >> q2) & 1:
-                    rows.append(state)
-                    cols.append(state)
-                    values.append(U)
-    
-    # 添加跳跃项（简化版本，只考虑最近邻）
-    for site in range(num_sites - 1):
-        q1_up, q1_down = 2*site, 2*site+1
-        q2_up, q2_down = 2*(site+1), 2*(site+1)+1
-        
-        if q2_down < num_qubits:
-            # 上自旋跳跃
-            for state in range(dim):
-                # 检查是否可以跳跃
-                if not ((state >> q1_up) & 1) and ((state >> q2_up) & 1):
-                    # 创建新态
-                    new_state = state | (1 << q1_up)  # 在q1_up位置1
-                    new_state = new_state & ~(1 << q2_up)  # 在q2_up位置0
-                    rows.append(state)
-                    cols.append(new_state)
-                    values.append(t)
-                    # 厄米共轭
-                    rows.append(new_state)
-                    cols.append(state)
-                    values.append(t)
-            
-            # 下自旋跳跃
-            for state in range(dim):
-                if not ((state >> q1_down) & 1) and ((state >> q2_down) & 1):
-                    new_state = state | (1 << q1_down)
-                    new_state = new_state & ~(1 << q2_down)
-                    rows.append(state)
-                    cols.append(new_state)
-                    values.append(t)
-                    rows.append(new_state)
-                    cols.append(state)
-                    values.append(t)
-    
-    # 创建稀疏矩阵
-    sparse_matrix = csr_matrix((values, (rows, cols)), shape=(dim, dim), dtype=np.complex64)
-    
-    # 对于大系统，我们使用对角近似
-    if dim > 10000:  # 对于非常大的系统，只保留主要项
-        print("Large system detected, using diagonal approximation")
-        # 只保留对角线和最近的几个非对角元素
-        diagonal = sparse_matrix.diagonal()
-        # 创建一个简化的哈密顿量，只包含对角项
-        hamiltonian = torch.zeros(dim, dim, dtype=torch.complex64, device=device)
-        hamiltonian.fill_diagonal_(torch.tensor(diagonal, dtype=torch.complex64, device=device))
-        return hamiltonian
-    else:
-        # 转换为密集矩阵
-        dense_matrix = sparse_matrix.toarray()
-        return torch.tensor(dense_matrix, dtype=torch.complex64, device=device)
-
-
-class SparseHamiltonian:
-    """稀疏哈密顿量类，用于处理大系统"""
-    
-    def __init__(self, sparse_matrix, device=None):
-        self.sparse_matrix = sparse_matrix
-        self.device = device
-        self.dim = sparse_matrix.shape[0]
-    
-    def __matmul__(self, other):
-        """矩阵乘法，支持稀疏矩阵与向量的乘法"""
-        if isinstance(other, torch.Tensor):
-            # 转换为numpy进行稀疏矩阵乘法
-            other_np = other.detach().cpu().numpy()
-            result_np = self.sparse_matrix @ other_np
-            return torch.tensor(result_np, dtype=torch.complex64, device=self.device)
-        else:
-            return self.sparse_matrix @ other
-
-
-def create_sparse_hubbard_hamiltonian_v2(num_qubits: int, t: float = 1.0, U: float = 4.0, device: torch.device = None):
-    """创建稀疏Hubbard模型哈密顿量（版本2，返回稀疏矩阵对象）"""
-    try:
-        import scipy.sparse as sp
-        from scipy.sparse import csr_matrix
-    except ImportError:
-        print("Warning: scipy not available, falling back to dense matrix")
-        return create_hubbard_hamiltonian(num_qubits, t, U, device)
-    
-    dim = 2 ** num_qubits
-    print(f"Creating sparse Hubbard hamiltonian with dimension {dim}")
-    
-    # 计算格点数（每2个量子比特表示1个格点）
-    num_sites = num_qubits // 2
-    if num_qubits % 2 != 0:
-        print(f"Warning: Odd number of qubits ({num_qubits}), using {num_sites} sites")
-    
-    # 使用列表存储非零元素
-    rows, cols, values = [], [], []
-    
-    # 添加相互作用项 U * n↑ * n↓ (双占据能量)
-    for site in range(num_sites):
-        q1, q2 = 2*site, 2*site+1
-        if q2 < num_qubits:
-            # 找到所有双占据态 |↑↓⟩
-            for state in range(dim):
-                # 检查第q1和q2位是否都是1
-                if (state >> q1) & 1 and (state >> q2) & 1:
-                    rows.append(state)
-                    cols.append(state)
-                    values.append(U)
-    
-    # 添加跳跃项（简化版本，只考虑最近邻）
-    for site in range(num_sites - 1):
-        q1_up, q1_down = 2*site, 2*site+1
-        q2_up, q2_down = 2*(site+1), 2*(site+1)+1
-        
-        if q2_down < num_qubits:
-            # 上自旋跳跃
-            for state in range(dim):
-                # 检查是否可以跳跃
-                if not ((state >> q1_up) & 1) and ((state >> q2_up) & 1):
-                    # 创建新态
-                    new_state = state | (1 << q1_up)  # 在q1_up位置1
-                    new_state = new_state & ~(1 << q2_up)  # 在q2_up位置0
-                    rows.append(state)
-                    cols.append(new_state)
-                    values.append(t)
-                    # 厄米共轭
-                    rows.append(new_state)
-                    cols.append(state)
-                    values.append(t)
-            
-            # 下自旋跳跃
-            for state in range(dim):
-                if not ((state >> q1_down) & 1) and ((state >> q2_down) & 1):
-                    new_state = state | (1 << q1_down)
-                    new_state = new_state & ~(1 << q2_down)
-                    rows.append(state)
-                    cols.append(new_state)
-                    values.append(t)
-                    rows.append(new_state)
-                    cols.append(state)
-                    values.append(t)
-    
-    # 创建稀疏矩阵
-    sparse_matrix = csr_matrix((values, (rows, cols)), shape=(dim, dim), dtype=np.complex64)
-    
-    # 返回稀疏矩阵对象
-    return SparseHamiltonian(sparse_matrix, device)
-
-
-class HubbardHamiltonianOperator:
+def create_paper_4N_heisenberg_hamiltonian(N, device=None):
     """
-    哈密顿量-向量乘法黑盒，不存储矩阵，只实现 H @ v
+    构造与arXiv:2007.10917v2一致的4*N准一维Heisenberg哈密顿量，
+    包含每个子系统内部5条边和子系统间2-0连接。
+    N: 子系统数，总比特数为4*N
     """
-    def __init__(self, num_qubits, t=1.0, U=4.0, device=None):
-        self.num_qubits = num_qubits
-        self.t = t
-        self.U = U
-        self.device = device
-        self.dim = 2 ** num_qubits
-        self.num_sites = num_qubits // 2
-        self.shape = (self.dim, self.dim)  # 兼容主流程打印
+    num_qubits = 4 * N
+    dim = 2 ** num_qubits
+    H = torch.zeros(dim, dim, dtype=torch.complex64, device=device)
+    # Pauli矩阵
+    I = torch.eye(2, dtype=torch.complex64, device=device)
+    X = torch.tensor([[0, 1], [1, 0]], dtype=torch.complex64, device=device)
+    Y = torch.tensor([[0, -1j], [1j, 0]], dtype=torch.complex64, device=device)
+    Z = torch.tensor([[1, 0], [0, -1]], dtype=torch.complex64, device=device)
 
-    def __matmul__(self, v):
-        if isinstance(v, torch.Tensor):
-            v_np = v.detach().cpu().numpy()
+    # 子系统内部边
+    for block in range(N):
+        offset = block * 4
+        edges = [(0,1), (1,2), (2,3), (3,0), (0,2)]
+        for (a, b) in edges:
+            q1 = offset + a
+            q2 = offset + b
+            for pauli in [X, Y, Z]:
+                ops = [I] * num_qubits
+                ops[q1] = pauli
+                ops[q2] = pauli
+                term = ops[0]
+                for op in ops[1:]:
+                    term = torch.kron(term, op)
+                H += term
+
+    # 子系统之间的2-0连接
+    for block in range(N-1):
+        q1 = block * 4 + 2
+        q2 = (block + 1) * 4 + 0
+        for pauli in [X, Y, Z]:
+            ops = [I] * num_qubits
+            ops[q1] = pauli
+            ops[q2] = pauli
+            term = ops[0]
+            for op in ops[1:]:
+                term = torch.kron(term, op)
+            H += term
+
+    return H 
+
+
+def test_paper_4N_heisenberg_vqe():
+    """测试4*N链的VQE能量"""
+    import torch
+    from src.circuit import Circuit, QuantumGate, load_gates_from_config
+    import json
+    import os
+    
+    # 加载门配置
+    load_gates_from_config("configs/gates_config.json")
+    
+    print("==== 4*N Paper Heisenberg VQE 测试 ====")
+    
+    for N in [1, 2, 3]:
+        num_qubits = 4 * N
+        print(f"\nN={N}, qubits={num_qubits}")
+        
+        # 构造简单PQC（可根据实际情况替换为更复杂结构）
+        pqc = PQC(num_qubits)
+        for i in range(num_qubits):
+            pqc.add_parametric_gate("RX", [i])
+            pqc.add_parametric_gate("RZ", [i])
+        for i in range(num_qubits-1):
+            pqc.add_gate("CNOT", [i, i+1])
+        
+        # 黑盒哈密顿量
+        H = create_paper_4N_heisenberg_hamiltonian_operator(N)
+        vqe = VQE(pqc, H)
+        
+        # 初始态|0...0>
+        init_state = torch.zeros(2**num_qubits, dtype=torch.complex64)
+        init_state[0] = 1.0
+        init_state = init_state.unsqueeze(0)  # 添加batch维度
+        
+        # 优化
+        result = vqe.optimize(num_iterations=300, input_state=init_state, 
+                            convergence_threshold=1e-5, patience=50)
+        
+        print(f"N={N} VQE能量: {result['final_energy']:.6f}, 最优能量: {result['best_energy']:.6f}")
+        # 可与文献表格对比 
+
+
+def test_vqe_with_hf_init():
+    """
+    用Hartree-Fock初态初始化VQE，验证收敛能量与HF能量对比
+    """
+    import torch
+    from src.circuit import Circuit, QuantumGate, load_gates_from_config
+    import os
+    load_gates_from_config("configs/gates_config.json")
+    print("==== VQE with Hartree-Fock 初始化测试 ====")
+    
+    for num_qubits in [4, 8, 12]:
+        print(f"\n--- {num_qubits} 比特系统 ---")
+        H = create_heisenberg_hamiltonian(num_qubits)
+        
+        # 构造更复杂的PQC以提高表达能力
+        pqc = PQC(num_qubits)
+        
+        # 根据系统大小调整PQC复杂度
+        if num_qubits <= 8:
+            # 4-8比特：5层结构
+            # 第一层：单比特旋转
+            for i in range(num_qubits):
+                pqc.add_parametric_gate("RX", [i])
+                pqc.add_parametric_gate("RZ", [i])
+            
+            # 第二层：纠缠层
+            for i in range(num_qubits-1):
+                pqc.add_gate("CNOT", [i, i+1])
+            
+            # 第三层：再次单比特旋转
+            for i in range(num_qubits):
+                pqc.add_parametric_gate("RX", [i])
+                pqc.add_parametric_gate("RZ", [i])
+            
+            # 第四层：反向纠缠
+            for i in range(num_qubits-1, 0, -1):
+                pqc.add_gate("CNOT", [i, i-1])
+            
+            # 第五层：最终单比特旋转
+            for i in range(num_qubits):
+                pqc.add_parametric_gate("RX", [i])
         else:
-            v_np = v
-        if v_np.ndim == 1:
-            v_np = v_np[None, :]  # [1, dim]
-        batch, dim = v_np.shape
-        out = np.zeros_like(v_np, dtype=np.complex64)
-        for b in range(batch):
-            for state in range(dim):
-                val = 0.0
-                # U项：双占据
-                for site in range(self.num_sites):
-                    q1, q2 = 2*site, 2*site+1
-                    if q2 < self.num_qubits:
-                        if ((state >> q1) & 1) and ((state >> q2) & 1):
-                            val += self.U
-                # 跳跃项（只考虑最近邻）
-                for site in range(self.num_sites - 1):
-                    q1_up, q1_down = 2*site, 2*site+1
-                    q2_up, q2_down = 2*(site+1), 2*(site+1)+1
-                    # 上自旋跳跃
-                    if q2_up < self.num_qubits:
-                        if not ((state >> q1_up) & 1) and ((state >> q2_up) & 1):
-                            new_state = state | (1 << q1_up)
-                            new_state = new_state & ~(1 << q2_up)
-                            val += self.t * v_np[b, new_state]
-                        if not ((state >> q2_up) & 1) and ((state >> q1_up) & 1):
-                            new_state = state | (1 << q2_up)
-                            new_state = new_state & ~(1 << q1_up)
-                            val += self.t * v_np[b, new_state]
-                    # 下自旋跳跃
-                    if q2_down < self.num_qubits:
-                        if not ((state >> q1_down) & 1) and ((state >> q2_down) & 1):
-                            new_state = state | (1 << q1_down)
-                            new_state = new_state & ~(1 << q2_down)
-                            val += self.t * v_np[b, new_state]
-                        if not ((state >> q2_down) & 1) and ((state >> q1_down) & 1):
-                            new_state = state | (1 << q2_down)
-                            new_state = new_state & ~(1 << q1_down)
-                            val += self.t * v_np[b, new_state]
-                out[b, state] = val
-        out_tensor = torch.tensor(out, dtype=torch.complex64, device=self.device)
-        if v.ndim == 1:
-            return out_tensor[0]
-        return out_tensor
-
-
-def create_hubbard_hamiltonian(num_qubits: int, t: float = 1.0, U: float = 4.0, device: torch.device = None):
-    """只返回HubbardHamiltonianOperator黑盒，不存储矩阵"""
-    return HubbardHamiltonianOperator(num_qubits, t, U, device) 
+            # 12比特：更复杂的8层结构
+            for layer in range(4):  # 4个重复块
+                # 单比特旋转
+                for i in range(num_qubits):
+                    pqc.add_parametric_gate("RX", [i])
+                    pqc.add_parametric_gate("RZ", [i])
+                
+                # 纠缠层（交替方向）
+                if layer % 2 == 0:
+                    for i in range(num_qubits-1):
+                        pqc.add_gate("CNOT", [i, i+1])
+                else:
+                    for i in range(num_qubits-1, 0, -1):
+                        pqc.add_gate("CNOT", [i, i-1])
+        
+        # 根据系统大小调整学习率
+        lr = 0.01 if num_qubits <= 8 else 0.005
+        vqe = VQE(pqc, H, optimizer_kwargs={'lr': lr})
+        
+        # HF初态
+        hf_state = get_hf_init_state(num_qubits)
+        
+        # HF能量
+        hf_energy = vqe.expectation_value(hf_state).item()
+        print(f"HF能量: {hf_energy:.6f}")
+        
+        # VQE优化 - 根据系统大小调整迭代次数
+        max_iterations = 1000 if num_qubits <= 8 else 2000
+        patience = 200 if num_qubits <= 8 else 300
+        result = vqe.optimize(num_iterations=max_iterations, input_state=hf_state, 
+                            convergence_threshold=1e-6, patience=patience)
+        
+        print(f"VQE最终能量: {result['final_energy']:.6f}, 最优能量: {result['best_energy']:.6f}")
+        print("能量差: ", result['final_energy'] - hf_energy)
+        print(f"总迭代次数: {result['iterations']}")
+        
+        # 计算能量改善百分比
+        improvement = (hf_energy - result['final_energy']) / abs(hf_energy) * 100
+        print(f"能量改善: {improvement:.2f}%") 

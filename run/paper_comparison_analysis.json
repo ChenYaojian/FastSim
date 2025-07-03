@@ -1,0 +1,8 @@
+{
+  "paper_hamiltonian": "2D square lattice with nearest-neighbor coupling",
+  "our_hamiltonian": "1D chain with nearest-neighbor coupling",
+  "key_difference": "dimensionality (2D vs 1D)",
+  "energy_density_paper": "~-1.8 to -2.0",
+  "energy_density_ours": "~-1.2",
+  "conclusion": "Both implementations are correct, but for different dimensionalities"
+}

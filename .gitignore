@@ -7,3 +7,6 @@ __pycache__
 data/
 logs/
 *.pth
+*.txt
+*.pdf
+*.png

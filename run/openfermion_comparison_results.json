@@ -1,0 +1,24 @@
+[
+  {
+    "num_qubits": 4,
+    "matrix_diff": 0.0,
+    "relative_diff": 0.0,
+    "min_eigenval_openfermion": -6.464101615137755,
+    "min_eigenval_current": -6.464101791381836,
+    "eigenval_diff": 1.7624408066296837e-07,
+    "is_hermitian_openfermion": true,
+    "is_hermitian_current": true,
+    "is_consistent": false
+  },
+  {
+    "num_qubits": 8,
+    "matrix_diff": 0.0,
+    "relative_diff": 0.0,
+    "min_eigenval_openfermion": -13.49973039475157,
+    "min_eigenval_current": -13.499730110168457,
+    "eigenval_diff": 2.845831126307985e-07,
+    "is_hermitian_openfermion": true,
+    "is_hermitian_current": true,
+    "is_consistent": false
+  }
+]
