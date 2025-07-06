@@ -65,6 +65,35 @@ class PQC(Circuit):
     def parameter_count(self) -> int:
         """返回参数总数"""
         return self.parameter_count
+    
+    def randomize_parameters(self, scale: float = 0.1, seed: int = None):
+        """
+        随机初始化所有参数
+        
+        Args:
+            scale: 随机化的尺度因子
+            seed: 随机种子
+        """
+        if seed is not None:
+            torch.manual_seed(seed)
+        
+        for gate, _ in self.gates:
+            if hasattr(gate, 'param_names'):
+                for param_name in gate.param_names:
+                    param = getattr(gate, param_name)
+                    param.data = torch.randn_like(param.data) * scale
+    
+    def reset_parameters(self, initial_params: torch.Tensor = None):
+        """
+        重置参数到指定值或随机值
+        
+        Args:
+            initial_params: 初始参数值，如果为None则随机初始化
+        """
+        if initial_params is not None:
+            self.set_parameters(initial_params)
+        else:
+            self.randomize_parameters()
 
 
 class VQE(nn.Module):
@@ -191,6 +220,108 @@ class VQE(nn.Module):
         """获取基态"""
         with torch.no_grad():
             return self.pqc(input_state)
+    
+    def optimize_with_random_restarts(self, num_epochs: int, iterations_per_epoch: int, 
+                                    input_state: torch.Tensor = None,
+                                    convergence_threshold: float = 1e-6, 
+                                    patience: int = 100,
+                                    random_scale: float = 0.1,
+                                    use_seed: bool = True) -> Dict:
+        """
+        使用随机重启优化VQE
+        
+        Args:
+            num_epochs: 总epoch数
+            iterations_per_epoch: 每个epoch的迭代次数
+            input_state: 输入量子态
+            convergence_threshold: 收敛阈值
+            patience: 早停耐心值
+            random_scale: 随机初始化尺度
+            use_seed: 是否使用种子确保可重复性
+            
+        Returns:
+            优化结果字典
+        """
+        best_energy = float('inf')
+        best_parameters = None
+        all_epoch_results = []
+        
+        print(f"开始随机重启优化: {num_epochs} 个epoch，每个epoch {iterations_per_epoch} 次迭代")
+        
+        for epoch in range(num_epochs):
+            print(f"\n--- Epoch {epoch + 1}/{num_epochs} ---")
+            
+            # 随机初始化参数
+            if use_seed:
+                self.pqc.randomize_parameters(scale=random_scale, seed=epoch)
+            else:
+                self.pqc.randomize_parameters(scale=random_scale)
+            
+            # 重置优化器
+            for param_group in self.optimizer.param_groups:
+                for param in param_group['params']:
+                    param.grad = None
+            
+            # 重置历史记录
+            self.energy_history = []
+            self.parameter_history = []
+            
+            # 执行单个epoch的优化
+            epoch_best_energy = float('inf')
+            patience_counter = 0
+            
+            for iteration in range(iterations_per_epoch):
+                energy = self.optimize_step(input_state)
+                
+                # 检查收敛
+                if energy < epoch_best_energy - convergence_threshold:
+                    epoch_best_energy = energy
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                
+                # 早停
+                if patience_counter >= patience:
+                    print(f"  Epoch {epoch + 1} 早停于迭代 {iteration}")
+                    break
+                
+                # 打印进度
+                if iteration % 100 == 0:
+                    print(f"  Iteration {iteration}: Energy = {energy:.6f}")
+            
+            # 记录epoch结果
+            epoch_result = {
+                'epoch': epoch + 1,
+                'final_energy': energy,
+                'best_energy': epoch_best_energy,
+                'iterations': len(self.energy_history),
+                'energy_history': self.energy_history.copy(),
+                'parameter_history': [p.clone() for p in self.parameter_history]
+            }
+            all_epoch_results.append(epoch_result)
+            
+            print(f"  Epoch {epoch + 1} 结果: 最终能量 = {energy:.6f}, 最优能量 = {epoch_best_energy:.6f}")
+            
+            # 更新全局最优
+            if epoch_best_energy < best_energy:
+                best_energy = epoch_best_energy
+                best_parameters = self.pqc.get_parameters().detach().clone()
+                print(f"  *** 新的全局最优能量: {best_energy:.6f} ***")
+        
+        # 恢复最佳参数
+        if best_parameters is not None:
+            self.pqc.set_parameters(best_parameters)
+        
+        print(f"\n随机重启优化完成!")
+        print(f"全局最优能量: {best_energy:.6f}")
+        
+        return {
+            'final_energy': energy,
+            'best_energy': best_energy,
+            'best_parameters': best_parameters,
+            'epoch_results': all_epoch_results,
+            'total_iterations': sum(r['iterations'] for r in all_epoch_results)
+        }
 
 
 def load_circuit_from_file(file_path: str) -> Dict:
@@ -361,47 +492,6 @@ def create_paper_4N_heisenberg_hamiltonian(N, device=None):
     return H 
 
 
-def test_paper_4N_heisenberg_vqe():
-    """测试4*N链的VQE能量"""
-    import torch
-    from src.circuit import Circuit, QuantumGate, load_gates_from_config
-    import json
-    import os
-    
-    # 加载门配置
-    load_gates_from_config("configs/gates_config.json")
-    
-    print("==== 4*N Paper Heisenberg VQE 测试 ====")
-    
-    for N in [1, 2, 3]:
-        num_qubits = 4 * N
-        print(f"\nN={N}, qubits={num_qubits}")
-        
-        # 构造简单PQC（可根据实际情况替换为更复杂结构）
-        pqc = PQC(num_qubits)
-        for i in range(num_qubits):
-            pqc.add_parametric_gate("RX", [i])
-            pqc.add_parametric_gate("RZ", [i])
-        for i in range(num_qubits-1):
-            pqc.add_gate("CNOT", [i, i+1])
-        
-        # 黑盒哈密顿量
-        H = create_paper_4N_heisenberg_hamiltonian_operator(N)
-        vqe = VQE(pqc, H)
-        
-        # 初始态|0...0>
-        init_state = torch.zeros(2**num_qubits, dtype=torch.complex64)
-        init_state[0] = 1.0
-        init_state = init_state.unsqueeze(0)  # 添加batch维度
-        
-        # 优化
-        result = vqe.optimize(num_iterations=300, input_state=init_state, 
-                            convergence_threshold=1e-5, patience=50)
-        
-        print(f"N={N} VQE能量: {result['final_energy']:.6f}, 最优能量: {result['best_energy']:.6f}")
-        # 可与文献表格对比 
-
-
 def test_vqe_with_hf_init():
     """
     用Hartree-Fock初态初始化VQE，验证收敛能量与HF能量对比
@@ -416,48 +506,9 @@ def test_vqe_with_hf_init():
         print(f"\n--- {num_qubits} 比特系统 ---")
         H = create_heisenberg_hamiltonian(num_qubits)
         
-        # 构造更复杂的PQC以提高表达能力
-        pqc = PQC(num_qubits)
-        
-        # 根据系统大小调整PQC复杂度
-        if num_qubits <= 8:
-            # 4-8比特：5层结构
-            # 第一层：单比特旋转
-            for i in range(num_qubits):
-                pqc.add_parametric_gate("RX", [i])
-                pqc.add_parametric_gate("RZ", [i])
-            
-            # 第二层：纠缠层
-            for i in range(num_qubits-1):
-                pqc.add_gate("CNOT", [i, i+1])
-            
-            # 第三层：再次单比特旋转
-            for i in range(num_qubits):
-                pqc.add_parametric_gate("RX", [i])
-                pqc.add_parametric_gate("RZ", [i])
-            
-            # 第四层：反向纠缠
-            for i in range(num_qubits-1, 0, -1):
-                pqc.add_gate("CNOT", [i, i-1])
-            
-            # 第五层：最终单比特旋转
-            for i in range(num_qubits):
-                pqc.add_parametric_gate("RX", [i])
-        else:
-            # 12比特：更复杂的8层结构
-            for layer in range(4):  # 4个重复块
-                # 单比特旋转
-                for i in range(num_qubits):
-                    pqc.add_parametric_gate("RX", [i])
-                    pqc.add_parametric_gate("RZ", [i])
-                
-                # 纠缠层（交替方向）
-                if layer % 2 == 0:
-                    for i in range(num_qubits-1):
-                        pqc.add_gate("CNOT", [i, i+1])
-                else:
-                    for i in range(num_qubits-1, 0, -1):
-                        pqc.add_gate("CNOT", [i, i-1])
+        # 使用自适应PQC构建
+        pqc = build_pqc_adaptive(num_qubits)
+        print(f"使用自适应PQC: {pqc.parameter_count} 个参数")
         
         # 根据系统大小调整学习率
         lr = 0.01 if num_qubits <= 8 else 0.005
@@ -483,3 +534,128 @@ def test_vqe_with_hf_init():
         # 计算能量改善百分比
         improvement = (hf_energy - result['final_energy']) / abs(hf_energy) * 100
         print(f"能量改善: {improvement:.2f}%") 
+
+
+def build_pqc_u_cz(num_qubits: int, num_layers: int = 2, closed_chain: bool = False, 
+                   device: torch.device = None) -> PQC:
+    """
+    构建标准PQC：每层所有比特U门+相邻CZ门
+    
+    Args:
+        num_qubits: 量子比特数
+        num_layers: 层数
+        closed_chain: 是否首尾相连（环形链）
+        device: 计算设备
+        
+    Returns:
+        PQC: 参数化量子电路
+    """
+    pqc = PQC(num_qubits, device)
+    
+    for layer in range(num_layers):
+        # 单比特U门
+        for i in range(num_qubits):
+            pqc.add_parametric_gate("U", [i])
+        
+        # 相邻CZ门
+        for i in range(num_qubits - 1):
+            pqc.add_gate("CZ", [i, i+1])
+        
+        # 如果是环形链且比特数>2，添加首尾连接
+        if closed_chain and num_qubits > 2:
+            pqc.add_gate("CZ", [num_qubits-1, 0])
+    
+    return pqc
+
+
+def build_pqc_rx_rz_cnot(num_qubits: int, num_layers: int = 2, closed_chain: bool = False,
+                         device: torch.device = None) -> PQC:
+    """
+    构建标准PQC：每层RX+RZ+CNOT结构
+    
+    Args:
+        num_qubits: 量子比特数
+        num_layers: 层数
+        closed_chain: 是否首尾相连（环形链）
+        device: 计算设备
+        
+    Returns:
+        PQC: 参数化量子电路
+    """
+    pqc = PQC(num_qubits, device)
+    
+    for layer in range(num_layers):
+        # 单比特旋转门
+        for i in range(num_qubits):
+            pqc.add_parametric_gate("RX", [i])
+            pqc.add_parametric_gate("RZ", [i])
+        
+        # 相邻CNOT门
+        for i in range(num_qubits - 1):
+            pqc.add_gate("CNOT", [i, i+1])
+        
+        # 如果是环形链且比特数>2，添加首尾连接
+        if closed_chain and num_qubits > 2:
+            pqc.add_gate("CNOT", [num_qubits-1, 0])
+    
+    return pqc
+
+
+def build_pqc_alternating(num_qubits: int, num_layers: int = 2, closed_chain: bool = False,
+                         device: torch.device = None) -> PQC:
+    """
+    构建交替纠缠PQC：相邻层使用不同方向的纠缠
+    
+    Args:
+        num_qubits: 量子比特数
+        num_layers: 层数
+        closed_chain: 是否首尾相连（环形链）
+        device: 计算设备
+        
+    Returns:
+        PQC: 参数化量子电路
+    """
+    pqc = PQC(num_qubits, device)
+    
+    for layer in range(num_layers):
+        # 单比特U门
+        for i in range(num_qubits):
+            pqc.add_parametric_gate("U", [i])
+        
+        # 交替方向的纠缠
+        if layer % 2 == 0:
+            # 正向纠缠
+            for i in range(num_qubits - 1):
+                pqc.add_gate("CZ", [i, i+1])
+            if closed_chain and num_qubits > 2:
+                pqc.add_gate("CZ", [num_qubits-1, 0])
+        else:
+            # 反向纠缠
+            for i in range(num_qubits - 1, 0, -1):
+                pqc.add_gate("CZ", [i, i-1])
+            if closed_chain and num_qubits > 2:
+                pqc.add_gate("CZ", [0, num_qubits-1])
+    
+    return pqc
+
+
+def build_pqc_adaptive(num_qubits: int, device: torch.device = None) -> PQC:
+    """
+    根据比特数自适应构建PQC
+    
+    Args:
+        num_qubits: 量子比特数
+        device: 计算设备
+        
+    Returns:
+        PQC: 参数化量子电路
+    """
+    if num_qubits <= 4:
+        # 小系统：2层U+CZ
+        return build_pqc_u_cz(num_qubits, num_layers=2, device=device)
+    elif num_qubits <= 8:
+        # 中等系统：3层RX+RZ+CNOT
+        return build_pqc_rx_rz_cnot(num_qubits, num_layers=3, device=device)
+    else:
+        # 大系统：4层交替纠缠
+        return build_pqc_alternating(num_qubits, num_layers=4, device=device) 

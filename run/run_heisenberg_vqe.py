@@ -12,7 +12,7 @@ import sys
 from typing import Dict, List
 
 # 添加项目根目录和src目录到路径
-project_root = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src_path = os.path.join(project_root, "src")
 sys.path.append(project_root)
 sys.path.append(src_path)
