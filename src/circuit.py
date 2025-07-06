@@ -408,12 +408,21 @@ class Circuit(nn.Module):
     def from_json(json_path_or_dict):
         """
         从json文件或dict构建Circuit实例。
-        json格式要求：
+        支持两种格式：
+        
+        1. 分层格式（包含layer信息）：
         {
             "0": [ {"gate_name": ..., "parameters": ..., "qubits": [...]}, ...],
             "1": [...],
             ...
         }
+        
+        2. 门序列格式（不包含layer信息）：
+        [
+            {"gate_name": ..., "parameters": ..., "qubits": [...]},
+            {"gate_name": ..., "parameters": ..., "qubits": [...]},
+            ...
+        ]
         """
         # 加载json
         if isinstance(json_path_or_dict, str):
@@ -421,36 +430,68 @@ class Circuit(nn.Module):
                 circuit_data = json.load(f)
         else:
             circuit_data = json_path_or_dict
+        
+        # 判断是否为分层格式
+        is_layered = isinstance(circuit_data, dict) and all(
+            isinstance(key, str) and key.isdigit() for key in circuit_data.keys()
+        )
+        
         # 统计最大qubit数
         max_qubit = -1
-        for layer in circuit_data.values():
-            for gate in layer:
+        if is_layered:
+            # 分层格式：遍历所有层
+            for layer in circuit_data.values():
+                for gate in layer:
+                    max_in_gate = max(gate["qubits"])
+                    if max_in_gate > max_qubit:
+                        max_qubit = max_in_gate
+        else:
+            # 门序列格式：直接遍历门列表
+            for gate in circuit_data:
                 max_in_gate = max(gate["qubits"])
                 if max_in_gate > max_qubit:
                     max_qubit = max_in_gate
+        
         num_qubits = max_qubit + 1
         circuit = Circuit(num_qubits)
-        # 按层顺序添加门
-        for layer_idx in sorted(circuit_data, key=lambda x: int(x)):
-            for gate in circuit_data[layer_idx]:
-                gate_name = gate["gate_name"]
-                if gate_name in {"MX", "MY", "MZ"}:
-                    continue  # 跳过测量操作
-                qubits = gate["qubits"]
-                params = gate.get("parameters", None)
-                # 如果参数是空dict，视为None
-                if isinstance(params, dict) and not params:
-                    params = None
-                # 如果参数是dict且有内容，按门定义顺序转为list
-                if isinstance(params, dict) and params:
-                    # 获取门的param_names
-                    gate_obj = QuantumGate.get_gate(gate_name)
-                    param_names = getattr(gate_obj, 'param_names', list(params.keys()))
-                    params = [params[k] for k in param_names]
-                    params = torch.tensor(params, dtype=torch.float32) if len(params) > 0 else None
-                elif isinstance(params, (list, tuple)):
-                    params = torch.tensor(params, dtype=torch.float32)
-                circuit.add_gate(gate_name, qubits, params)
+        
+        def process_gate(gate):
+            """处理单个门"""
+            gate_name = gate["gate_name"]
+            if gate_name in {"MX", "MY", "MZ"}:
+                return  # 跳过测量操作
+            
+            qubits = gate["qubits"]
+            params = gate.get("parameters", None)
+            
+            # 如果参数是空dict，视为None
+            if isinstance(params, dict) and not params:
+                params = None
+            
+            # 如果参数是dict且有内容，按门定义顺序转为list
+            if isinstance(params, dict) and params:
+                # 获取门的param_names
+                gate_obj = QuantumGate.get_gate(gate_name)
+                param_names = getattr(gate_obj, 'param_names', list(params.keys()))
+                params = [params[k] for k in param_names]
+                params = torch.tensor(params, dtype=torch.float32) if len(params) > 0 else None
+            elif isinstance(params, (list, tuple)):
+                params = torch.tensor(params, dtype=torch.float32)
+            
+            circuit.add_gate(gate_name, qubits, params)
+        
+        if is_layered:
+            # 分层格式：按层顺序添加门
+            print(f"检测到分层格式，按层顺序处理 {len(circuit_data)} 层")
+            for layer_idx in sorted(circuit_data, key=lambda x: int(x)):
+                for gate in circuit_data[layer_idx]:
+                    process_gate(gate)
+        else:
+            # 门序列格式：直接按顺序添加门
+            print(f"检测到门序列格式，按顺序处理 {len(circuit_data)} 个门")
+            for gate in circuit_data:
+                process_gate(gate)
+        
         return circuit
         
         
