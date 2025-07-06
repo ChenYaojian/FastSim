@@ -293,6 +293,94 @@ class StateVector(AbstractState):
         
         return torch.tensor(results, dtype=torch.int64)
     
+    def sample_final_state(self, num_shots: int = 1000, 
+                          qubit_indices: Optional[List[int]] = None,
+                          return_json: bool = True) -> Union[Dict[int, int], str]:
+        """末态采样
+        
+        根据量子态的振幅计算概率分布，然后进行采样。
+        
+        Args:
+            num_shots: 采样次数
+            qubit_indices: 要采样的量子比特索引，如果为None则采样所有量子比特
+            return_json: 是否返回JSON字符串，如果为False则返回字典
+            
+        Returns:
+            Union[Dict[int, int], str]: 采样结果
+                - 如果return_json=True: 返回JSON字符串
+                - 如果return_json=False: 返回字典，键为比特串的整数表示，值为采样次数
+        """
+        if qubit_indices is None:
+            qubit_indices = list(range(self.num_qubits))
+        
+        # 计算测量概率
+        probs = torch.abs(self.state_vector) ** 2
+        
+        # 进行采样
+        sampled_states = torch.multinomial(probs, num_shots, replacement=True)
+        
+        # 统计每个比特串的出现次数
+        bitstring_counts = {}
+        for state_idx in sampled_states:
+            # 将状态索引转换为比特串
+            bitstring = format(state_idx.item(), f'0{self.num_qubits}b')
+            
+            # 提取指定量子比特的比特串
+            if qubit_indices != list(range(self.num_qubits)):
+                # 如果只采样部分量子比特，需要重新构建比特串
+                partial_bitstring = ''.join([bitstring[i] for i in qubit_indices])
+                # 将部分比特串转换为整数
+                bitstring_int = int(partial_bitstring, 2)
+            else:
+                # 采样所有量子比特，直接使用状态索引
+                bitstring_int = state_idx.item()
+            
+            # 更新计数
+            bitstring_counts[bitstring_int] = bitstring_counts.get(bitstring_int, 0) + 1
+        
+        if return_json:
+            import json
+            return json.dumps(bitstring_counts, indent=2)
+        else:
+            return bitstring_counts
+    
+    def get_probability_distribution(self, qubit_indices: Optional[List[int]] = None) -> Dict[int, float]:
+        """获取量子态的概率分布
+        
+        Args:
+            qubit_indices: 要计算的量子比特索引，如果为None则计算所有量子比特
+            
+        Returns:
+            Dict[int, float]: 概率分布，键为比特串的整数表示，值为概率
+        """
+        if qubit_indices is None:
+            qubit_indices = list(range(self.num_qubits))
+        
+        # 计算测量概率
+        probs = torch.abs(self.state_vector) ** 2
+        
+        # 构建概率分布
+        prob_dist = {}
+        for state_idx, prob in enumerate(probs):
+            if prob > 1e-10:  # 只保留非零概率
+                # 将状态索引转换为比特串
+                bitstring = format(state_idx, f'0{self.num_qubits}b')
+                
+                # 提取指定量子比特的比特串
+                if qubit_indices != list(range(self.num_qubits)):
+                    # 如果只计算部分量子比特，需要重新构建比特串
+                    partial_bitstring = ''.join([bitstring[i] for i in qubit_indices])
+                    # 将部分比特串转换为整数
+                    bitstring_int = int(partial_bitstring, 2)
+                else:
+                    # 计算所有量子比特，直接使用状态索引
+                    bitstring_int = state_idx
+                
+                # 累加概率（如果有多个状态映射到同一个部分比特串）
+                prob_dist[bitstring_int] = prob_dist.get(bitstring_int, 0.0) + prob.item()
+        
+        return prob_dist
+    
     def get_state_vector(self) -> torch.Tensor:
         """获取量子态向量表示
         
