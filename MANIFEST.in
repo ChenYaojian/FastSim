@@ -1,0 +1,21 @@
+# 包含README和许可证文件
+include README.md
+include LICENSE
+include requirements.txt
+include environment.yaml
+
+# 包含配置文件
+recursive-include configs *.yaml *.yml *.json
+
+# 包含测试文件
+recursive-include tests *.py
+
+# 包含文档
+recursive-include docs *.md *.rst *.txt
+
+# 排除Python缓存文件
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *.so
+global-exclude .DS_Store
+global-exclude .git* 

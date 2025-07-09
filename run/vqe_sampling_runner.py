@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from run.standard_vqe_sampling import ExampleVQESampling
+from standard_vqe_sampling import ExampleVQESampling
 
 
 def parse_arguments():

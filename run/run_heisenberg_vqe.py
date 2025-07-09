@@ -11,14 +11,12 @@ import os
 import sys
 from typing import Dict, List
 
-# 添加项目根目录和src目录到路径
+# 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-src_path = os.path.join(project_root, "src")
 sys.path.append(project_root)
-sys.path.append(src_path)
 
-from src.circuit import load_gates_from_config, QuantumGate
-from src.vqe import VQE, PQC, create_pqc_from_config, create_heisenberg_hamiltonian
+from fastsim.circuit import load_gates_from_config, QuantumGate
+from fastsim.vqe import VQE, PQC, create_pqc_from_config, create_heisenberg_hamiltonian
 
 
 def create_extended_circuit_config(base_config: Dict, target_qubits: int) -> Dict:

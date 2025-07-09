@@ -3,10 +3,10 @@ import torch.nn as nn
 import os
 import sys
 
-project_root = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from src.circuit import Circuit, load_gates_from_config
+from fastsim.circuit import Circuit, load_gates_from_config
 
 def test_gradient_flow():
     """测试梯度是否正确传递到量子门的参数"""

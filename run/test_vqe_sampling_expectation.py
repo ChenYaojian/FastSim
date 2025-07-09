@@ -13,11 +13,11 @@ import torch
 import numpy as np
 import json
 from typing import List, Union
-from src.vqe import VQE, build_pqc_u_cz
-from src.hamiltonian import create_heisenberg_hamiltonian
-from src.circuit import load_gates_from_config
-from src.state import StateVector
-from src.sampling import Sampler, calculate_expectation_from_sampling
+from fastsim.vqe import VQE, build_pqc_u_cz
+from fastsim.hamiltonian import create_heisenberg_hamiltonian
+from fastsim.circuit import load_gates_from_config
+from fastsim.state import StateVector
+from fastsim.sampling import Sampler, calculate_expectation_from_sampling
 
 def create_test_hamiltonian(num_qubits: int, J: float = 1.0, h: float = 0.0):
     """创建测试用的海森堡哈密顿量"""

@@ -10,12 +10,12 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
 import torch
-from src.vqe import (
+from fastsim.vqe import (
     build_pqc_u_cz, build_pqc_rx_rz_cnot, build_pqc_alternating, 
     build_pqc_adaptive, VQE, create_heisenberg_hamiltonian
 )
-from src.circuit import load_gates_from_config
-from src.tool import get_hf_init_state
+from fastsim.circuit import load_gates_from_config
+from fastsim.tool import get_hf_init_state
 
 def demo_pqc_structures():
     """演示不同的PQC结构"""

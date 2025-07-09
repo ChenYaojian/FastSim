@@ -10,8 +10,8 @@ import sys
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from src.circuit import Circuit
-from src.circuit import load_gates_from_config
+from fastsim.circuit import Circuit
+from fastsim.circuit import load_gates_from_config
 
 class QuantumNN(nn.Module):
     def __init__(self, num_qubits=4):

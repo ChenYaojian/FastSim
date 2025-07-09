@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastsim"
+version = "0.1.0"
+description = "快速量子态向量模拟器 - 高效的量子电路模拟和VQE算法实现"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Yaojian Chen", email = "yj-chen21@mails.tsinghua.edu.cn"}
+]
+maintainers = [
+    {name = "Yaojian Chen", email = "yj-chen21@mails.tsinghua.edu.cn"}
+]
+keywords = ["quantum computing", "quantum simulation", "quantum circuits", "VQE", "quantum algorithms"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26.4",
+    "torch>=2.1.0",
+    "scipy>=1.11.0",
+    "matplotlib>=3.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+docs = [
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=1.3.0",
+    "nbsphinx>=0.9.0",
+]
+examples = [
+    "jupyter>=1.0.0",
+    "ipywidgets>=8.0.0",
+]
+
+[project.urls]
+Homepage = "https://gitlab.quantumsc.online/qlc/fastsim/"
+
+[project.scripts]
+fastsim = "fastsim.tool:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fastsim*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt", "*.yaml", "*.yml"]
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"] 

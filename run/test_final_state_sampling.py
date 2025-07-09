@@ -12,8 +12,8 @@ sys.path.append(project_root)
 import torch
 import json
 import numpy as np
-from src.state import StateVector, AbstractState
-from src.circuit import Circuit, load_gates_from_config
+from fastsim.state import StateVector, AbstractState
+from fastsim.circuit import Circuit, load_gates_from_config
 
 def test_basic_sampling():
     """测试基本采样功能"""

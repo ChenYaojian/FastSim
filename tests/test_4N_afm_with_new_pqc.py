@@ -11,23 +11,21 @@ sys.path.append(project_root)
 
 import torch
 import numpy as np
-from src.vqe import (
-    build_pqc_adaptive, build_pqc_u_cz, build_pqc_rx_rz_cnot, 
-    build_pqc_alternating, VQE
+from fastsim.vqe import (
+    PQC, VQE, build_pqc_adaptive, build_pqc_u_cz, build_pqc_rx_rz_cnot, build_pqc_alternating
 )
-from src.hamiltonian import (
-    create_paper_4N_heisenberg_hamiltonian_operator, 
-    create_paper_4N_heisenberg_hamiltonian
+from fastsim.hamiltonian import (
+    create_paper_4N_heisenberg_hamiltonian_operator, create_paper_4N_heisenberg_hamiltonian
 )
-from src.circuit import load_gates_from_config
-from src.tool import get_hf_init_state
+from fastsim.circuit import load_gates_from_config
+from fastsim.tool import get_hf_init_state
 
 def test_4N_afm_with_different_pqc():
     """测试4*N AFM哈密顿量使用不同的PQC结构"""
     print("=== 4*N AFM哈密顿量 + 新PQC结构测试 ===\n")
     
     # 加载门配置
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     # 测试不同的N值
     for N in [1, 2, 3]:
@@ -123,7 +121,7 @@ def test_4N_afm_with_hf_init():
     """使用HF初态测试4*N AFM哈密顿量"""
     print("=== 4*N AFM哈密顿量 + HF初态测试 ===\n")
     
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     for N in [1, 2, 3]:
         num_qubits = 4 * N
@@ -171,7 +169,7 @@ def compare_pqc_performance():
     """比较不同PQC结构的性能"""
     print("=== PQC结构性能对比 ===\n")
     
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     N = 1  # 4比特系统，便于快速测试
     num_qubits = 4 * N

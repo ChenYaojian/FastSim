@@ -8,8 +8,8 @@ import pytest
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from src.circuit import Circuit, load_gates_from_config, QuantumGate
-from src.state import StateType, AbstractState
+from fastsim.circuit import Circuit, load_gates_from_config, QuantumGate
+from fastsim.state import StateType, AbstractState
 
 @pytest.fixture(scope="session", autouse=True)
 def register_all_gates():

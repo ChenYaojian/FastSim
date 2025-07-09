@@ -5,9 +5,9 @@ import numpy as np
 import json
 import os
 from typing import Dict, List, Union, Callable, Optional
-from src.circuit import Circuit, load_gates_from_config, QuantumGate
-from src.hamiltonian import *
-from src.tool import get_hf_init_state
+from .circuit import Circuit, load_gates_from_config, QuantumGate
+from .hamiltonian import *
+from .tool import get_hf_init_state
 
 
 class PQC(Circuit):
@@ -497,7 +497,7 @@ def test_vqe_with_hf_init():
     用Hartree-Fock初态初始化VQE，验证收敛能量与HF能量对比
     """
     import torch
-    from src.circuit import Circuit, QuantumGate, load_gates_from_config
+    from .circuit import Circuit, QuantumGate, load_gates_from_config
     import os
     load_gates_from_config("configs/gates_config.json")
     print("==== VQE with Hartree-Fock 初始化测试 ====")
@@ -600,6 +600,22 @@ def build_pqc_rx_rz_cnot(num_qubits: int, num_layers: int = 2, closed_chain: boo
     
     return pqc
 
+
+def build_double_cz_pqc(num_qubits: int, num_layers: int = 2, device: torch.device = None) -> PQC:
+    """
+    构建双层PQC：每层所有比特RX门+相邻CZ门+每层所有比特RZ门
+    """
+    pqc = PQC(num_qubits, device)
+    for layer in range(num_layers):
+        for ii in range(num_qubits):
+            pqc.add_parametric_gate("RX", [ii], [0.0])
+        for ii in range(0, num_qubits - 1, 2):
+            pqc.add_gate("CZ", [ii, ii + 1])
+        for ii in range(1, num_qubits - 1, 2):
+            pqc.add_gate("CZ", [ii, ii + 1])
+        for ii in range(num_qubits):
+            pqc.add_parametric_gate("RZ", [ii], [0.0])
+    return pqc
 
 def build_pqc_alternating(num_qubits: int, num_layers: int = 2, closed_chain: bool = False,
                          device: torch.device = None) -> PQC:

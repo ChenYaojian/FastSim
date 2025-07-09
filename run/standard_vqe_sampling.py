@@ -22,11 +22,11 @@ from datetime import datetime
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from src.vqe import VQE, build_pqc_u_cz
-from src.hamiltonian import create_heisenberg_hamiltonian
-from src.circuit import load_gates_from_config
-from src.state import StateVector
-from src.sampling import Sampler
+from fastsim.vqe import VQE, build_double_cz_pqc
+from fastsim.hamiltonian import create_heisenberg_hamiltonian
+from fastsim.circuit import load_gates_from_config
+from fastsim.state import StateVector
+from fastsim.sampling import Sampler
 
 
 class ExampleVQESampling:
@@ -72,7 +72,7 @@ class ExampleVQESampling:
         )
         
         # 创建PQC
-        self.pqc = build_pqc_u_cz(
+        self.pqc = build_double_cz_pqc(
             self.num_qubits, 
             **self.pqc_params
         )

@@ -9,11 +9,11 @@ import os
 import sys
 
 # 添加项目根目录到路径
-project_root = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from src.circuit import load_gates_from_config
-from src.vqe import VQE, PQC, create_random_hamiltonian
+from fastsim.circuit import load_gates_from_config
+from fastsim.vqe import VQE, PQC, create_random_hamiltonian
 
 
 def test_pqc_basic():

@@ -814,7 +814,7 @@ def create_paper_4N_heisenberg_hamiltonian(N, device=None):
             term = ops[0]
             for op in ops[1:]:
                 term = torch.kron(term, op)
-            H += term
+            H -= term
 
     return H
 

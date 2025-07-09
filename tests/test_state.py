@@ -8,7 +8,7 @@ import pytest
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from src.state import StateType, AbstractState
+from fastsim.state import StateType, AbstractState
 
 def test_state_creation():
     num_qubits = 2

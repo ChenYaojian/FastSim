@@ -19,8 +19,8 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 sys.path.append(os.path.join(project_root, 'src'))
 
-from src.circuit import load_gates_from_config
-from src.vqe import VQE, PQC, load_circuit_from_file, create_pqc_from_config, create_random_hamiltonian, create_heisenberg_hamiltonian, create_ising_hamiltonian, create_hubbard_hamiltonian
+from .circuit import load_gates_from_config
+from .vqe import VQE, PQC, load_circuit_from_file, create_pqc_from_config, create_random_hamiltonian, create_heisenberg_hamiltonian, create_ising_hamiltonian, create_hubbard_hamiltonian
 
 
 def load_circuit_data(data_dir: str, circuit_name: str) -> Dict:

@@ -10,14 +10,12 @@ import os
 import sys
 from typing import Dict, List
 
-# 添加项目根目录和src目录到路径
+# 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-src_path = os.path.join(project_root, "src")
 sys.path.append(project_root)
-sys.path.append(src_path)
 
-from src.vqe import VQE, PQC, create_quasi_1d_afm_hamiltonian, load_circuit_from_file, create_pqc_from_config
-from src.circuit import load_gates_from_config
+from fastsim.vqe import VQE, PQC, create_quasi_1d_afm_hamiltonian, load_circuit_from_file, create_pqc_from_config
+from fastsim.circuit import load_gates_from_config
 
 
 def run_quasi_1d_afm_vqe_quick(num_qubits_list: List[int], circuit_path: str, 

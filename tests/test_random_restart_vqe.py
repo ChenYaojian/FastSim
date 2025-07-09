@@ -11,19 +11,19 @@ sys.path.append(project_root)
 
 import torch
 import numpy as np
-from src.vqe import (
-    build_pqc_adaptive, build_pqc_u_cz, VQE
+from fastsim.vqe import (
+    PQC, VQE, build_pqc_adaptive, build_pqc_u_cz, build_pqc_rx_rz_cnot
 )
-from src.hamiltonian import create_heisenberg_hamiltonian
-from src.circuit import load_gates_from_config
-from src.tool import get_hf_init_state
+from fastsim.hamiltonian import create_heisenberg_hamiltonian
+from fastsim.circuit import load_gates_from_config
+from fastsim.tool import get_hf_init_state
 
 def test_random_restart_vqe():
     """测试随机重启VQE优化"""
     print("=== 随机重启VQE优化测试 ===\n")
     
     # 加载门配置
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     # 测试不同系统大小
     for num_qubits in [4, 6, 8]:

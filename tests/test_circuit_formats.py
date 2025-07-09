@@ -11,13 +11,13 @@ sys.path.append(project_root)
 
 import json
 import torch
-from src.circuit import Circuit, load_gates_from_config
+from fastsim.circuit import Circuit, load_gates_from_config
 
 def create_test_circuits():
     """创建测试用的电路文件"""
     
     # 加载门配置
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     # 1. 分层格式的电路
     layered_circuit = {
@@ -127,7 +127,7 @@ def test_edge_cases():
     """测试边界情况"""
     print("\n=== 测试边界情况 ===\n")
     
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     # 测试1: 空电路
     print("1. 测试空电路:")
@@ -182,7 +182,7 @@ def test_circuit_execution():
     """测试电路执行"""
     print("\n=== 测试电路执行 ===\n")
     
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     # 创建一个简单的电路
     simple_circuit = [

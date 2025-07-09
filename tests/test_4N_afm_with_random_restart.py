@@ -11,23 +11,21 @@ sys.path.append(project_root)
 
 import torch
 import numpy as np
-from src.vqe import (
-    build_pqc_adaptive, build_pqc_u_cz, build_pqc_rx_rz_cnot, 
-    build_pqc_alternating, VQE
+from fastsim.vqe import (
+    PQC, VQE, build_pqc_adaptive, build_pqc_u_cz, build_pqc_rx_rz_cnot
 )
-from src.hamiltonian import (
-    create_paper_4N_heisenberg_hamiltonian_operator, 
-    create_paper_4N_heisenberg_hamiltonian
+from fastsim.hamiltonian import (
+    create_paper_4N_heisenberg_hamiltonian_operator, create_paper_4N_heisenberg_hamiltonian
 )
-from src.circuit import load_gates_from_config
-from src.tool import get_hf_init_state
+from fastsim.circuit import load_gates_from_config
+from fastsim.tool import get_hf_init_state
 
 def test_4N_afm_with_random_restart():
     """使用随机重启优化4*N AFM哈密顿量"""
     print("=== 4*N AFM哈密顿量 + 随机重启优化 ===\n")
     
     # 加载门配置
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     # 测试不同的N值
     for N in [1, 2, 3]:
@@ -107,7 +105,7 @@ def test_4N_afm_random_restart_vs_standard():
     """比较随机重启与标准优化的性能"""
     print("=== 随机重启 vs 标准优化对比 ===\n")
     
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     for N in [1, 2]:
         num_qubits = 4 * N
@@ -164,7 +162,7 @@ def test_4N_afm_with_hf_random_restart():
     """使用HF初态的随机重启优化"""
     print("=== 4*N AFM + HF初态 + 随机重启 ===\n")
     
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     for N in [1, 2, 3]:
         num_qubits = 4 * N
@@ -226,7 +224,7 @@ def test_different_random_scales():
     """测试不同随机化尺度对性能的影响"""
     print("=== 不同随机化尺度测试 ===\n")
     
-    load_gates_from_config("configs/gates_config.json")
+    load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     N = 1  # 4比特系统
     num_qubits = 4 * N

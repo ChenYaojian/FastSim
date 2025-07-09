@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import json
 from typing import Dict, List, Union, Optional
-from src.state import StateVector
+from .state import StateVector
 
 
 class Sampler:

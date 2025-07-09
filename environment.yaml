@@ -1,4 +1,4 @@
-name: fastsv
+name: fastsim
 channels:
   - defaults
   - conda-forge
