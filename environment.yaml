@@ -6,6 +6,12 @@ dependencies:
   - python>=3.10
   - numpy>=1.26.4
   - pytorch>=2.1.0
+  - scipy>=1.11.0
+  - matplotlib>=3.7.0
   - pip
   - pip:
-      - pytest
+      - pytest>=7.0.0
+      - pytest-cov>=4.0.0
+      - black>=23.0.0
+      - flake8>=6.0.0
+      - mypy>=1.0.0

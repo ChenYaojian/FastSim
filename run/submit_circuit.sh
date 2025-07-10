@@ -19,7 +19,7 @@ cd ${SLURM_SUBMIT_DIR}
 export PYTHONPATH=$PYTHONPATH:$(pwd)/..
 
 # 运行量子电路
-python src/execute_circuit.py \
+python fastsim/execute_circuit.py \
     --circuit_path "data/sim_cir_input_4layers.json" \
     --gates_config_path "configs/gates_config.json" \
     --output_path "data/sim_cir_output_4layers.bin" \

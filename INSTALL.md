@@ -42,37 +42,49 @@ pip install -e .[dev,docs,examples]
 
 ```python
 import fastsim
+from fastsim.circuit import Circuit, load_gates_from_config
+from fastsim.state import StateVector
 
-# 创建量子电路
-from fastsim.circuit import QuantumCircuit
-from fastsim.state import QuantumState
+# 加载门配置
+load_gates_from_config('configs/gates_config.json')
 
 # 创建2量子比特电路
-circuit = QuantumCircuit(2)
-circuit.h(0)  # Hadamard门
-circuit.cx(0, 1)  # CNOT门
+circuit = Circuit(2)
+circuit.add_gate('H', [0])  # Hadamard门
+circuit.add_gate('CNOT', [0, 1])  # CNOT门
 
 # 执行电路
-state = QuantumState(2)
-result_state = circuit.execute(state)
+state = StateVector(2)
+result_state = circuit(state.get_state_vector().unsqueeze(0))[0]
 print(result_state)
 ```
 
 ### VQE算法使用
 
 ```python
-from fastsim.vqe import VQE
+from fastsim.vqe import VQE, PQC
 from fastsim.hamiltonian import create_heisenberg_hamiltonian
+from fastsim.circuit import load_gates_from_config
+
+# 加载门配置
+load_gates_from_config('configs/gates_config.json')
 
 # 创建哈密顿量
 hamiltonian = create_heisenberg_hamiltonian(4)
 
+# 创建参数化量子电路
+pqc = PQC(4)
+pqc.add_parametric_gate('RX', [0], [0.5])
+pqc.add_parametric_gate('RY', [1], [0.3])
+pqc.add_parametric_gate('CNOT', [0, 1])
+
 # 创建VQE实例
-vqe = VQE(hamiltonian, num_qubits=4)
+vqe = VQE(pqc, hamiltonian)
 
 # 运行VQE
-energy, params = vqe.optimize()
-print(f"基态能量: {energy}")
+result = vqe.optimize(num_iterations=100, convergence_threshold=1e-6)
+print(f"基态能量: {result['final_energy']}")
+```
 ```
 
 ## 环境要求
@@ -121,7 +133,7 @@ pip install -e .[dev]
 pytest
 
 # 代码格式化
-black src/ tests/
+black fastsim/ tests/
 ```
 
 ## 卸载
