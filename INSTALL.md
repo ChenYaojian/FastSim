@@ -41,11 +41,11 @@ pip install -e .[dev,docs,examples]
 ### 基本使用
 
 ```python
-import fastsv
+import fastsim
 
 # 创建量子电路
-from fastsv.circuit import QuantumCircuit
-from fastsv.state import QuantumState
+from fastsim.circuit import QuantumCircuit
+from fastsim.state import QuantumState
 
 # 创建2量子比特电路
 circuit = QuantumCircuit(2)
@@ -61,8 +61,8 @@ print(result_state)
 ### VQE算法使用
 
 ```python
-from fastsv.vqe import VQE
-from fastsv.hamiltonian import create_heisenberg_hamiltonian
+from fastsim.vqe import VQE
+from fastsim.hamiltonian import create_heisenberg_hamiltonian
 
 # 创建哈密顿量
 hamiltonian = create_heisenberg_hamiltonian(4)
@@ -109,10 +109,10 @@ print(f"基态能量: {energy}")
 
 ```bash
 # 创建虚拟环境
-python -m venv fastsv_env
-source fastsv_env/bin/activate  # Linux/Mac
+python -m venv fastsim_env
+source fastsim_env/bin/activate  # Linux/Mac
 # 或
-fastsv_env\Scripts\activate  # Windows
+fastsim_env\Scripts\activate  # Windows
 
 # 安装开发依赖
 pip install -e .[dev]
@@ -127,5 +127,5 @@ black src/ tests/
 ## 卸载
 
 ```bash
-pip uninstall fastsv
+pip uninstall fastsim
 ``` 
