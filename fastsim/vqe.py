@@ -100,7 +100,8 @@ class VQE(nn.Module):
     """变分量子本征求解器（Variational Quantum Eigensolver）"""
     
     def __init__(self, pqc: PQC, hamiltonian: torch.Tensor, 
-                 optimizer_class=optim.Adam, optimizer_kwargs: Dict = None):
+                 optimizer_class=optim.Adam, optimizer_kwargs: Dict = None,
+                 store_best_state: bool = False, save_dir: str = "vqe_results"):
         """
         初始化VQE
         
@@ -109,6 +110,8 @@ class VQE(nn.Module):
             hamiltonian: 哈密顿量矩阵
             optimizer_class: 优化器类
             optimizer_kwargs: 优化器参数
+            store_best_state: 是否存储最佳状态
+            save_dir: 保存结果的目录
         """
         super().__init__()
         self.pqc = pqc
@@ -122,6 +125,17 @@ class VQE(nn.Module):
         # 优化历史
         self.energy_history = []
         self.parameter_history = []
+        
+        # 存储最佳状态的设置
+        self.store_best_state = store_best_state
+        self.save_dir = save_dir
+        self.best_energy = float('inf')
+        self.best_parameters = None
+        self.best_state_vector = None
+        
+        # 创建保存目录
+        if self.store_best_state:
+            os.makedirs(self.save_dir, exist_ok=True)
     
     def expectation_value(self, state: torch.Tensor) -> torch.Tensor:
         """计算期望值 <ψ|H|ψ>"""
@@ -196,6 +210,10 @@ class VQE(nn.Module):
             if energy < best_energy - convergence_threshold:
                 best_energy = energy
                 patience_counter = 0
+                
+                # 如果启用了状态存储，更新最佳状态
+                if self.store_best_state:
+                    self.update_best_state(best_energy, input_state)
             else:
                 patience_counter += 1
             
@@ -220,6 +238,148 @@ class VQE(nn.Module):
         """获取基态"""
         with torch.no_grad():
             return self.pqc(input_state)
+    
+    def update_best_state(self, energy: float, input_state: torch.Tensor = None):
+        """
+        更新最佳状态（如果当前能量更低）
+        
+        Args:
+            energy: 当前能量
+            input_state: 输入量子态
+        """
+        if energy < self.best_energy:
+            self.best_energy = energy
+            self.best_parameters = self.pqc.get_parameters().detach().clone()
+            
+            # 计算并存储最佳状态向量
+            if input_state is not None:
+                with torch.no_grad():
+                    self.best_state_vector = self.pqc(input_state).detach().clone()
+            else:
+                with torch.no_grad():
+                    self.best_state_vector = self.pqc().detach().clone()
+    
+    def save_best_state(self, filename_prefix: str = "best_state"):
+        """
+        保存最佳状态到文件
+        
+        Args:
+            filename_prefix: 文件名前缀
+        """
+        if not self.store_best_state or self.best_parameters is None:
+            print("警告: 未启用状态存储或没有最佳状态可保存")
+            return
+        
+        timestamp = torch.tensor([torch.tensor(0.0).item()])  # 简单的占位符
+        if hasattr(torch, 'datetime'):
+            timestamp = torch.tensor([torch.datetime.now().timestamp()])
+        
+        # 保存参数
+        param_file = os.path.join(self.save_dir, f"{filename_prefix}_parameters.pt")
+        torch.save({
+            'parameters': self.best_parameters,
+            'energy': self.best_energy,
+            'timestamp': timestamp,
+            'num_qubits': self.pqc.num_qubits,
+            'parameter_count': self.pqc.parameter_count
+        }, param_file)
+        
+        # 保存状态向量
+        if self.best_state_vector is not None:
+            state_file = os.path.join(self.save_dir, f"{filename_prefix}_state_vector.pt")
+            torch.save({
+                'state_vector': self.best_state_vector,
+                'energy': self.best_energy,
+                'timestamp': timestamp,
+                'num_qubits': self.pqc.num_qubits
+            }, state_file)
+        
+        # 保存详细信息到JSON文件
+        info_file = os.path.join(self.save_dir, f"{filename_prefix}_info.json")
+        info = {
+            'best_energy': self.best_energy,
+            'num_qubits': self.pqc.num_qubits,
+            'parameter_count': self.pqc.parameter_count,
+            'timestamp': timestamp.item() if hasattr(timestamp, 'item') else timestamp[0].item(),
+            'files': {
+                'parameters': f"{filename_prefix}_parameters.pt",
+                'state_vector': f"{filename_prefix}_state_vector.pt" if self.best_state_vector is not None else None
+            }
+        }
+        
+        with open(info_file, 'w') as f:
+            json.dump(info, f, indent=2)
+        
+        print(f"最佳状态已保存到 {self.save_dir}/")
+        print(f"  - 参数文件: {param_file}")
+        if self.best_state_vector is not None:
+            print(f"  - 状态向量文件: {state_file}")
+        print(f"  - 信息文件: {info_file}")
+    
+    def load_best_state(self, filename_prefix: str = "best_state") -> bool:
+        """
+        从文件加载最佳状态
+        
+        Args:
+            filename_prefix: 文件名前缀
+            
+        Returns:
+            bool: 是否成功加载
+        """
+        param_file = os.path.join(self.save_dir, f"{filename_prefix}_parameters.pt")
+        
+        if not os.path.exists(param_file):
+            print(f"错误: 参数文件不存在 {param_file}")
+            return False
+        
+        try:
+            # 加载参数
+            checkpoint = torch.load(param_file)
+            self.best_parameters = checkpoint['parameters']
+            self.best_energy = checkpoint['energy']
+            
+            # 设置电路参数
+            self.pqc.set_parameters(self.best_parameters)
+            
+            # 尝试加载状态向量
+            state_file = os.path.join(self.save_dir, f"{filename_prefix}_state_vector.pt")
+            if os.path.exists(state_file):
+                state_checkpoint = torch.load(state_file)
+                self.best_state_vector = state_checkpoint['state_vector']
+            
+            print(f"成功加载最佳状态:")
+            print(f"  - 最佳能量: {self.best_energy:.6f}")
+            print(f"  - 量子比特数: {checkpoint['num_qubits']}")
+            print(f"  - 参数数量: {checkpoint['parameter_count']}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"加载最佳状态时出错: {e}")
+            return False
+    
+    def get_best_state_info(self) -> Dict:
+        """
+        获取最佳状态信息
+        
+        Returns:
+            Dict: 包含最佳状态信息的字典
+        """
+        if self.best_parameters is None:
+            return {'error': '没有保存的最佳状态'}
+        
+        info = {
+            'best_energy': self.best_energy,
+            'num_qubits': self.pqc.num_qubits,
+            'parameter_count': self.pqc.parameter_count,
+            'has_state_vector': self.best_state_vector is not None
+        }
+        
+        if self.best_state_vector is not None:
+            info['state_vector_shape'] = list(self.best_state_vector.shape)
+            info['state_vector_norm'] = torch.norm(self.best_state_vector).item()
+        
+        return info
     
     def optimize_with_random_restarts(self, num_epochs: int, iterations_per_epoch: int, 
                                     input_state: torch.Tensor = None,
@@ -307,6 +467,10 @@ class VQE(nn.Module):
                 best_energy = epoch_best_energy
                 best_parameters = self.pqc.get_parameters().detach().clone()
                 print(f"  *** 新的全局最优能量: {best_energy:.6f} ***")
+                
+                # 如果启用了状态存储，更新最佳状态
+                if self.store_best_state:
+                    self.update_best_state(best_energy, input_state)
         
         # 恢复最佳参数
         if best_parameters is not None:
