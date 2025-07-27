@@ -65,6 +65,12 @@
             "matrix": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, -1]]
         },
         {
+            "name": "CS",
+            "num_qubits": 2,
+            "is_parametric": false,
+            "matrix": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, "j"]]
+        },
+        {
             "name": "SWAP",
             "num_qubits": 2,
             "is_parametric": false,

@@ -189,10 +189,32 @@ class ParametricGate(QuantumGate):
 
 
 def _parse_complex_matrix(matrix):
-    """解析包含复数的矩阵"""
+    """解析包含复数的矩阵
+    
+    支持以下格式：
+    - 字符串 "j" -> 1j
+    - 字符串 "-j" -> -1j  
+    - 字符串 "1j", "2j", "-1j" 等 -> 对应的复数
+    - 已经是复数的值 -> 保持不变
+    - 其他数值 -> 保持不变
+    """
     def parse_complex(x):
         if isinstance(x, str):
-            return eval(x.replace('j', '1j'))
+            # 处理字符串形式的复数
+            if x == 'j':
+                return 1j
+            elif x == '-j':
+                return -1j
+            elif x.endswith('j'):
+                # 处理形如 "1j", "2j", "-1j" 等的情况
+                if x[:-1] == '' or x[:-1] == '+':
+                    return 1j
+                elif x[:-1] == '-':
+                    return -1j
+                else:
+                    return eval(x)
+            else:
+                return eval(x)
         return x
     return [[parse_complex(x) for x in row] for row in matrix]
 
