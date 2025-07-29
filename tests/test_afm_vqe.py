@@ -8,7 +8,7 @@ import torch
 import pytest
 import numpy as np
 from fastsim.vqe import PQC, VQE, build_pqc_adaptive, build_pqc_u_cz, build_pqc_rx_rz_cnot
-from fastsim.hamiltonian import create_paper_4N_heisenberg_hamiltonian_operator, create_paper_4N_heisenberg_hamiltonian
+from fastsim.hamiltonian import create_hamiltonian
 from fastsim.circuit import load_gates_from_config
 
 @pytest.mark.parametrize("N", [1, 2, 3])
@@ -82,8 +82,8 @@ def test_hamiltonian_consistency():
         print(f"N={N}, 比特数={num_qubits}")
         
         # 创建哈密顿量
-        H_operator = create_paper_4N_heisenberg_hamiltonian_operator(N)
-        H_dense = create_paper_4N_heisenberg_hamiltonian(N)
+        H_operator = create_hamiltonian('paper_4n_heisenberg', N=N)
+        H_dense = create_hamiltonian('paper_4n_heisenberg', N=N)
         
         # 测试随机态
         test_state = torch.randn(2**num_qubits, dtype=torch.complex64)
@@ -116,7 +116,7 @@ def test_hamiltonian_structure():
         print(f"N={N}, 比特数={num_qubits}")
         
         # 密集哈密顿量
-        H = create_paper_4N_heisenberg_hamiltonian(N)
+        H = create_hamiltonian('paper_4n_heisenberg', N=N)
         
         # 检查基本性质
         assert H.shape == (2**num_qubits, 2**num_qubits), f"哈密顿量形状错误: {H.shape}"
@@ -146,7 +146,7 @@ def test_different_pqc_structures():
     load_gates_from_config(os.path.join(project_root, "configs", "gates_config.json"))
     
     # 密集哈密顿量
-    H = create_paper_4N_heisenberg_hamiltonian(N)
+    H = create_hamiltonian('paper_4n_heisenberg', N=N)
     
     # 初始态
     init_state = torch.zeros(2**num_qubits, dtype=torch.complex64)

@@ -14,14 +14,14 @@ import numpy as np
 import json
 from typing import List, Union
 from fastsim.vqe import VQE, build_pqc_u_cz
-from fastsim.hamiltonian import create_heisenberg_hamiltonian
+from fastsim.hamiltonian import create_hamiltonian
 from fastsim.circuit import load_gates_from_config
 from fastsim.state import StateVector
 from fastsim.sampling import Sampler, calculate_expectation_from_sampling
 
 def create_test_hamiltonian(num_qubits: int, J: float = 1.0, h: float = 0.0):
     """创建测试用的海森堡哈密顿量"""
-    return create_heisenberg_hamiltonian(num_qubits, J=J, h=h)
+    return create_hamiltonian('heisenberg', num_qubits=num_qubits, J=J, h=h)
 
 def get_hamiltonian_matrix(hamiltonian) -> torch.Tensor:
     """获取哈密顿量的矩阵表示，兼容小系统和大系统"""

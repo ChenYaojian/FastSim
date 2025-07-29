@@ -14,7 +14,7 @@ import numpy as np
 from fastsim.vqe import (
     PQC, VQE, build_pqc_adaptive, build_pqc_u_cz, build_pqc_rx_rz_cnot
 )
-from fastsim.hamiltonian import create_heisenberg_hamiltonian
+from fastsim.hamiltonian import create_hamiltonian
 from fastsim.circuit import load_gates_from_config
 from fastsim.tool import get_hf_init_state
 
@@ -30,7 +30,7 @@ def test_random_restart_vqe():
         print(f"--- {num_qubits} 比特系统 ---")
         
         # 创建哈密顿量
-        H = create_heisenberg_hamiltonian(num_qubits)
+        H = create_hamiltonian('heisenberg', num_qubits=num_qubits)
         
         # 创建PQC
         pqc = build_pqc_adaptive(num_qubits)
@@ -123,7 +123,7 @@ def test_random_restart_with_hf():
     load_gates_from_config("configs/gates_config.json")
     
     num_qubits = 6
-    H = create_heisenberg_hamiltonian(num_qubits)
+    H = create_hamiltonian('heisenberg', num_qubits=num_qubits)
     pqc = build_pqc_adaptive(num_qubits)
     vqe = VQE(pqc, H, optimizer_kwargs={'lr': 0.01})
     
@@ -167,7 +167,7 @@ def compare_optimization_strategies():
     load_gates_from_config("configs/gates_config.json")
     
     num_qubits = 4
-    H = create_heisenberg_hamiltonian(num_qubits)
+    H = create_hamiltonian('heisenberg', num_qubits=num_qubits)
     init_state = torch.zeros(2**num_qubits, dtype=torch.complex64)
     init_state[0] = 1.0
     init_state = init_state.unsqueeze(0)

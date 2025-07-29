@@ -23,7 +23,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
 from fastsim.vqe import VQE, build_double_cz_pqc
-from fastsim.hamiltonian import create_heisenberg_hamiltonian
+from fastsim.hamiltonian import create_hamiltonian
 from fastsim.circuit import load_gates_from_config
 from fastsim.state import StateVector
 from fastsim.sampling import Sampler
@@ -66,10 +66,7 @@ class ExampleVQESampling:
     def _initialize_components(self):
         """初始化VQE组件"""
         # 创建哈密顿量
-        self.hamiltonian = create_heisenberg_hamiltonian(
-            self.num_qubits, 
-            **self.hamiltonian_params
-        )
+        self.hamiltonian = create_hamiltonian('heisenberg', num_qubits=self.num_qubits, **self.hamiltonian_params)
         
         # 创建PQC
         self.pqc = build_double_cz_pqc(

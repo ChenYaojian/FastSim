@@ -14,9 +14,7 @@ import numpy as np
 from fastsim.vqe import (
     PQC, VQE, build_pqc_adaptive, build_pqc_u_cz, build_pqc_rx_rz_cnot
 )
-from fastsim.hamiltonian import (
-    create_paper_4N_heisenberg_hamiltonian_operator, create_paper_4N_heisenberg_hamiltonian
-)
+from fastsim.hamiltonian import create_hamiltonian
 from fastsim.circuit import load_gates_from_config
 from fastsim.tool import get_hf_init_state
 
@@ -33,8 +31,8 @@ def test_4N_afm_with_random_restart():
         print(f"--- N={N} (4*{N}={num_qubits}比特) ---")
         
         # 创建哈密顿量
-        H_operator = create_paper_4N_heisenberg_hamiltonian_operator(N)
-        H_dense = create_paper_4N_heisenberg_hamiltonian(N)
+        H_operator = create_hamiltonian('paper_4n_heisenberg', N=N)
+        H_dense = create_hamiltonian('paper_4n_heisenberg', N=N)
         
         # 初始态
         init_state = torch.zeros(2**num_qubits, dtype=torch.complex64)
@@ -112,7 +110,7 @@ def test_4N_afm_random_restart_vs_standard():
         print(f"--- N={N} (4*{N}={num_qubits}比特) ---")
         
         # 创建哈密顿量
-        H = create_paper_4N_heisenberg_hamiltonian(N)
+        H = create_hamiltonian('paper_4n_heisenberg', N=N)
         
         # 初始态
         init_state = torch.zeros(2**num_qubits, dtype=torch.complex64)
@@ -169,7 +167,7 @@ def test_4N_afm_with_hf_random_restart():
         print(f"--- N={N} (4*{N}={num_qubits}比特) ---")
         
         # 创建哈密顿量
-        H_operator = create_paper_4N_heisenberg_hamiltonian_operator(N)
+        H_operator = create_hamiltonian('paper_4n_heisenberg', N=N)
         
         # 使用自适应PQC
         pqc = build_pqc_adaptive(num_qubits)
@@ -228,7 +226,7 @@ def test_different_random_scales():
     
     N = 1  # 4比特系统
     num_qubits = 4 * N
-    H = create_paper_4N_heisenberg_hamiltonian(N)
+    H = create_hamiltonian('paper_4n_heisenberg', N=N)
     
     # 初始态
     init_state = torch.zeros(2**num_qubits, dtype=torch.complex64)
