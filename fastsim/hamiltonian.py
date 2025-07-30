@@ -370,15 +370,22 @@ class HubbardHamiltonian(Hamiltonian):
                 # 只保留 Z↑Z↓ 项，因为其他项是常数
                 self.add_pauli_term('ZZ', [q1, q2], U/4)
         
-        # 添加跳跃项（简化版本，只考虑最近邻）
+        # 添加跳跃项（最近邻）
         for site in range(num_sites - 1):
             q1_up, q1_down = 2*site, 2*site+1
             q2_up, q2_down = 2*(site+1), 2*(site+1)+1
             
             if q2_down < num_qubits:
                 # 上自旋跳跃：t * (c↑_i† c↑_{i+1} + h.c.)
-                # 这需要更复杂的实现，这里简化处理
-                pass
+                # c↑_i† c↑_{i+1} = (X↑_i - iY↑_i)(X↑_{i+1} + iY↑_{i+1})/4
+                # 展开后：XX + YY + i(XY - YX)
+                # 由于哈密顿量必须是厄米的，我们只保留 XX + YY 项
+                self.add_pauli_term('XX', [q1_up, q2_up], t/4)
+                self.add_pauli_term('YY', [q1_up, q2_up], t/4)
+                
+                # 下自旋跳跃：t * (c↓_i† c↓_{i+1} + h.c.)
+                self.add_pauli_term('XX', [q1_down, q2_down], t/4)
+                self.add_pauli_term('YY', [q1_down, q2_down], t/4)
 
 
 class Quasi1DAFMHamiltonian(Hamiltonian):
