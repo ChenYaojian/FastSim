@@ -8,129 +8,43 @@ import json
 import re
 
 
-class PauliOperator(nn.Module):
-    """泡利算符基类，使用压缩表示"""
+class Operator(nn.Module):
+    """通用算符基类，支持任意量子比特数和索引"""
     
-    def __init__(self, name: str, qubit_indices: List[int], coefficient: complex = 1.0, device: torch.device = None):
-        super().__init__()
-        self.name = name
-        self.qubit_indices = qubit_indices
-        self.coefficient = coefficient
-        self.device = device or torch.device('cpu')
-        
-        # 泡利矩阵（压缩表示）
-        self.pauli_matrices = {
-            'I': torch.eye(2, dtype=torch.complex64, device=self.device),
-            'X': torch.tensor([[0, 1], [1, 0]], dtype=torch.complex64, device=self.device),
-            'Y': torch.tensor([[0, -1j], [1j, 0]], dtype=torch.complex64, device=self.device),
-            'Z': torch.tensor([[1, 0], [0, -1]], dtype=torch.complex64, device=self.device)
-        }
-        
-    def get_matrix(self, total_qubits: int) -> Tuple[torch.Tensor, List[int]]:
-        """获取泡利算符的压缩表示（矩阵和量子比特索引）"""
-        # 只返回泡利矩阵和量子比特索引，不计算完整张量积
-        pauli_matrix = self.pauli_matrices[self.name[0]] if self.name else self.pauli_matrices['I']
-        return pauli_matrix, self.qubit_indices
-    
-    def forward(self, state: torch.Tensor) -> torch.Tensor:
-        """将泡利算符应用到量子态（模仿Circuit.py的方式）"""
-        # 确保state是2D张量 [batch_size, dim]
-        if state.dim() == 1:
-            state = state.unsqueeze(0)  # 添加batch维度
-        
-        batch_size = state.size(0)
-        total_qubits = int(math.log2(state.size(1)))
-        
-        # 获取泡利矩阵
-        pauli_matrix = self.pauli_matrices[self.name[0]] if self.name else self.pauli_matrices['I']
-        
-        # 对每个样本分别处理
-        new_states = []
-        for i in range(batch_size):
-            # 将单个样本的state重塑为nqubit维的张量
-            single_state = state[i].view([2] * total_qubits)
-            
-            # 根据算符作用的qubits，将state vector permute，然后reshape
-            permute_order = list(range(total_qubits))
-            for j, qubit in enumerate(self.qubit_indices):
-                permute_order[j], permute_order[qubit] = permute_order[qubit], permute_order[j]
-            
-            # 计算逆置换
-            inverse_permute_order = [0] * total_qubits
-            for j, pos in enumerate(permute_order):
-                inverse_permute_order[pos] = j
-            
-            # 重塑state为矩阵形式
-            reshaped_state = single_state.permute(permute_order).reshape(2, -1)
-            
-            # 执行矩阵乘法
-            new_state = torch.matmul(pauli_matrix, reshaped_state)
-            
-            # 将state permute回去（使用逆置换）
-            new_state = new_state.reshape([2] * total_qubits).permute(inverse_permute_order)
-            new_states.append(new_state.reshape(-1))
-        
-        # 将处理后的状态堆叠成batch
-        result = torch.stack(new_states)
-        return result
-
-
-
-
-
-class Hamiltonian(nn.Module):
-    """
-    统一的哈密顿量模块，继承自nn.Module
-    支持稀疏形式和分解形式，重载加法操作
-    """
-    
-    def __init__(self, num_qubits: int, use_sparse: bool = False, 
-                 use_decomposed: bool = False, device: torch.device = None):
+    def __init__(self, num_qubits: int, qubit_indices: List[int], 
+                 use_sparse: bool = False, use_decomposed: bool = False,
+                 device: torch.device = None):
         super().__init__()
         self.num_qubits = num_qubits
+        self.qubit_indices = qubit_indices
         self.use_sparse = use_sparse
         self.use_decomposed = use_decomposed
         self.device = device or torch.device('cpu')
         self.dim = 2 ** num_qubits
         
-        # 存储哈密顿量的不同表示形式
+        # 存储不同表示形式
         self.dense_matrix = None
         self.sparse_matrix = None
-        self.terms = nn.ModuleList()  # 哈密顿量项列表（每个term是哈密顿量）
-        self.operators = nn.ModuleList()  # 泡利算符列表（用于单个哈密顿量）
-        self.coefficient = 1.0  # term的系数
+        self.terms = nn.ModuleList()  # 算符项列表
+        self.coefficient = 1.0  # 系数
         
         # 形状属性，用于兼容性
         self.shape = (self.dim, self.dim)
         
-    def add_term(self, term: 'Hamiltonian'):
-        """添加哈密顿量项"""
+    def add_term(self, term: 'Operator'):
+        """添加算符项"""
         self.terms.append(term)
-        
-    def add_pauli_term(self, pauli_string: str, qubit_indices: List[int], coefficient: complex = 1.0):
-        """添加泡利项，例如 'XX' 作用于 [0, 1]"""
-        # 创建包含多个算符的哈密顿量
-        term = Hamiltonian(self.num_qubits, self.use_sparse, self.use_decomposed, self.device)
-        operators = []
-        for i, pauli in enumerate(pauli_string):
-            if i < len(qubit_indices):
-                operator = PauliOperator(pauli, [qubit_indices[i]], 1.0, self.device)
-                operators.append(operator)
-        term.operators = nn.ModuleList(operators)
-        # 设置term的系数
-        term.coefficient = coefficient
-        self.add_term(term)
         
     def __add__(self, other):
         """重载加法操作"""
-        if not isinstance(other, Hamiltonian):
-            raise TypeError("Can only add Hamiltonian instances")
+        if not isinstance(other, Operator):
+            raise TypeError("Can only add Operator instances")
         
         if self.num_qubits != other.num_qubits:
-            raise ValueError("Hamiltonians must have the same number of qubits")
+            raise ValueError("Operators must have the same number of qubits")
         
-        # 创建新的哈密顿量
-        result = Hamiltonian(self.num_qubits, self.use_sparse, self.use_decomposed, self.device)
+        result = Operator(self.num_qubits, self.qubit_indices, 
+                         self.use_sparse, self.use_decomposed, self.device)
         
         # 复制所有项
         for term in self.terms:
@@ -145,7 +59,8 @@ class Hamiltonian(nn.Module):
         if not isinstance(scalar, (int, float, complex)):
             raise TypeError("Can only multiply by scalar")
         
-        result = Hamiltonian(self.num_qubits, self.use_sparse, self.use_decomposed, self.device)
+        result = Operator(self.num_qubits, self.qubit_indices,
+                         self.use_sparse, self.use_decomposed, self.device)
         
         # 复制所有项，乘以标量
         for term in self.terms:
@@ -159,7 +74,7 @@ class Hamiltonian(nn.Module):
         return self.__mul__(scalar)
         
     def build_dense_matrix(self):
-        """构建密集矩阵表示（使用einsum）"""
+        """构建密集矩阵表示"""
         if self.dense_matrix is not None:
             return self.dense_matrix
             
@@ -170,25 +85,9 @@ class Hamiltonian(nn.Module):
             for term in self.terms:
                 term_matrix = term.get_matrix()
                 H += term_matrix
-        # 否则使用operators
-        elif len(self.operators) > 0:
-            # 构建完整的张量积矩阵
-            matrices = [torch.eye(2, dtype=torch.complex64, device=self.device)] * self.num_qubits
-            
-            # 将每个算符的矩阵放到正确的位置
-            for operator in self.operators:
-                op_matrix, _ = operator.get_matrix(self.num_qubits)
-                for i, qubit_idx in enumerate(operator.qubit_indices):
-                    if i < len(operator.name):
-                        matrices[qubit_idx] = op_matrix
-            
-            # 计算张量积
-            result_matrix = matrices[0]
-            for matrix in matrices[1:]:
-                result_matrix = torch.kron(result_matrix, matrix)
-            
-            # 应用term的系数
-            H += self.coefficient * result_matrix
+        # 否则使用自身的矩阵表示
+        else:
+            H = self._get_matrix()
             
         self.dense_matrix = H
         return H
@@ -220,23 +119,22 @@ class Hamiltonian(nn.Module):
         return self.sparse_matrix
         
     def forward(self, state: torch.Tensor) -> torch.Tensor:
-        """前向传播，计算 H @ state"""
+        """前向传播，计算 O @ state"""
         # 确保state是2D张量 [batch_size, dim]
         if state.dim() == 1:
             state = state.unsqueeze(0)  # 添加batch维度
         
-        if self.use_decomposed and (len(self.terms) > 0 or len(self.operators) > 0):
+        if self.use_decomposed and len(self.terms) > 0:
             # 使用分解形式，分别计算每个term
             result = torch.zeros_like(state)
-            if len(self.terms) > 0:
-                for term in self.terms:
+            for term in self.terms:
+                # 确保PauliStringOperator使用其分解形式
+                if hasattr(term, 'use_decomposed') and term.use_decomposed:
                     result += term(state)
-            elif len(self.operators) > 0:
-                # 对于单个term，逐个应用operator，最后应用系数
-                current_state = state
-                for operator in self.operators:
-                    current_state = operator(current_state)
-                result = self.coefficient * current_state
+                else:
+                    # 如果term不是分解形式，强制使用分解形式
+                    term.use_decomposed = True
+                    result += term(state)
             return result
         elif self.use_sparse:
             # 使用稀疏形式
@@ -255,18 +153,15 @@ class Hamiltonian(nn.Module):
             # 使用密集矩阵形式
             if self.dense_matrix is None:
                 self.build_dense_matrix()
-            # 确保state是2D张量 [batch_size, dim]
-            if state.dim() == 1:
-                state = state.unsqueeze(0)  # 添加batch维度
             return torch.matmul(self.dense_matrix, state.transpose(0, 1)).transpose(0, 1)
     
     def expectation(self, state: torch.Tensor) -> torch.Tensor:
-        """计算期望值 <ψ|H|ψ>"""
-        H_state = self.forward(state)
-        return torch.sum(state.conj() * H_state, dim=-1)
+        """计算期望值 <ψ|O|ψ>"""
+        O_state = self.forward(state)
+        return torch.sum(state.conj() * O_state, dim=-1)
     
     def __matmul__(self, other):
-        """支持矩阵乘法语法 H @ v"""
+        """支持矩阵乘法语法 O @ v"""
         return self.forward(other)
     
     def get_matrix(self):
@@ -275,6 +170,201 @@ class Hamiltonian(nn.Module):
             return self.build_sparse_matrix()
         else:
             return self.build_dense_matrix()
+    
+    def _get_matrix(self):
+        """基类的默认矩阵获取方法"""
+        # 如果没有terms，返回零矩阵
+        if len(self.terms) == 0:
+            return torch.zeros(self.dim, self.dim, dtype=torch.complex64, device=self.device)
+        
+        # 否则返回terms的矩阵表示
+        H = torch.zeros(self.dim, self.dim, dtype=torch.complex64, device=self.device)
+        for term in self.terms:
+            H += term.get_matrix()
+        return H
+    
+    def is_hermitian(self, tolerance: float = 1e-10) -> bool:
+        """检查算符是否为厄米算符"""
+        matrix = self.get_matrix()
+        if hasattr(matrix, 'to_dense'):
+            matrix = matrix.to_dense()
+        return torch.allclose(matrix, matrix.conj().transpose(-2, -1), atol=tolerance)
+
+
+class PauliStringOperator(Operator):
+    """泡利字符串算符，支持高效的分解形式计算"""
+    
+    def __init__(self, pauli_string: str, qubit_indices: List[int], 
+                 coefficient: complex = 1.0, num_qubits: int = None,
+                 use_sparse: bool = False, use_decomposed: bool = True,
+                 device: torch.device = None):
+        # 如果没有指定num_qubits，从qubit_indices推断
+        if num_qubits is None:
+            num_qubits = max(qubit_indices) + 1 if qubit_indices else 0
+            
+        super().__init__(num_qubits, qubit_indices, use_sparse, use_decomposed, device)
+        self.pauli_string = pauli_string
+        self.coefficient = coefficient
+        
+        # 泡利矩阵（压缩表示）
+        self.pauli_matrices = {
+            'I': torch.eye(2, dtype=torch.complex64, device=self.device),
+            'X': torch.tensor([[0, 1], [1, 0]], dtype=torch.complex64, device=self.device),
+            'Y': torch.tensor([[0, -1j], [1j, 0]], dtype=torch.complex64, device=self.device),
+            'Z': torch.tensor([[1, 0], [0, -1]], dtype=torch.complex64, device=self.device)
+        }
+        
+    def _get_matrix(self):
+        """获取泡利算符的完整矩阵表示"""
+        # 构建完整的张量积矩阵
+        matrices = [torch.eye(2, dtype=torch.complex64, device=self.device)] * self.num_qubits
+        
+        # 将每个泡利算符的矩阵放到正确的位置
+        for i, (pauli, qubit_idx) in enumerate(zip(self.pauli_string, self.qubit_indices)):
+            if i < len(self.qubit_indices):
+                matrices[qubit_idx] = self.pauli_matrices[pauli]
+        
+        # 计算张量积
+        result_matrix = matrices[0]
+        for matrix in matrices[1:]:
+            result_matrix = torch.kron(result_matrix, matrix)
+        
+        return self.coefficient * result_matrix
+    
+    def forward(self, state: torch.Tensor) -> torch.Tensor:
+        """高效的泡利算符应用（分解形式）"""
+        if self.use_decomposed:
+            return self._forward_decomposed(state)
+        else:
+            return super().forward(state)
+    
+    def _forward_decomposed(self, state: torch.Tensor) -> torch.Tensor:
+        """高效的分解形式泡利算符应用 - 延迟置换和相位操作"""
+        # 确保state是2D张量 [batch_size, dim]
+        if state.dim() == 1:
+            state = state.unsqueeze(0)
+        
+        batch_size = state.size(0)
+        total_qubits = int(math.log2(state.size(1)))
+        
+        # 对每个样本分别处理
+        new_states = []
+        for i in range(batch_size):
+            # 将单个样本的state重塑为1D向量
+            single_state = state[i]
+            
+            # 使用优化的泡利串合并处理
+            result_state = self._apply_pauli_sequence_optimized(single_state, total_qubits)
+            new_states.append(result_state)
+        
+        # 将处理后的状态堆叠成batch并应用系数
+        result = torch.stack(new_states)
+        return self.coefficient * result
+    
+    def _apply_pauli_sequence_optimized(self, state: torch.Tensor, total_qubits: int) -> torch.Tensor:
+        """优化的泡利算符序列应用 - 合并处理方案"""
+        import numpy as np
+        
+        # 转换为numpy数组以提高性能
+        state_np = state.detach().cpu().numpy()
+        num_states = len(state_np)
+        
+        # 1. 为每个qubit维护翻转标志和相位
+        transposition_flags = [False] * total_qubits  # 翻转标志
+        phase_factors = [(1.0, 1.0)] * total_qubits  # 相位因子 (p0, p1)
+        global_phase = 1.0  # 全局相位
+        
+        # 2. 逐个处理泡利算符，累积翻转和相位信息
+        for pauli, qubit_idx in zip(self.pauli_string, self.qubit_indices):
+            if qubit_idx >= total_qubits:
+                continue
+                
+            p0, p1 = phase_factors[qubit_idx]
+            
+            if pauli == 'X':
+                # X算符：翻转比特，交换相位分量
+                transposition_flags[qubit_idx] = not transposition_flags[qubit_idx]
+                phase_factors[qubit_idx] = (p1, p0)
+                
+            elif pauli == 'Y':
+                # Y算符：翻转比特，交换相位分量并乘以i/-i
+                transposition_flags[qubit_idx] = not transposition_flags[qubit_idx]
+                phase_factors[qubit_idx] = (-1j * p1, 1j * p0)
+                
+            elif pauli == 'Z':
+                # Z算符：只改变相位，第二个分量乘以-1
+                phase_factors[qubit_idx] = (p0, -p1)
+                
+            # I算符：不改变任何东西
+        
+        # 3. 统一进行置换操作
+        # 计算基于翻转标志的掩码（注意：需要反转比特顺序以匹配张量积顺序）
+        mask = sum(flag << (total_qubits - 1 - i) for i, flag in enumerate(transposition_flags))
+        
+        # 生成置换索引
+        perm_indices = np.arange(num_states) ^ mask
+        
+        # 应用置换
+        new_state_vector = state_np[perm_indices]
+        
+        # 4. 统一进行相位操作
+        indices = np.arange(num_states)
+        total_phase = np.ones(num_states, dtype=np.complex128)
+        
+        for i in range(total_qubits):
+            p0, p1 = phase_factors[i]
+            
+            # 优化1：如果p0 == p1，则只需将相位乘到global_phase上
+            if p0 == p1:
+                if p0 != 1.0:  # 优化2：如果相位为1，跳过
+                    global_phase *= p0
+                continue
+            
+            # 优化2：如果某个分量的相位为1，则跳过该分量
+            if p0 == 1.0 and p1 == 1.0:
+                continue
+            
+            # 提取第i个比特的值（注意：需要反转比特顺序）
+            bit_values = (indices >> (total_qubits - 1 - i)) & 1
+            
+            # 计算相位贡献：bit=0时用p0，bit=1时用p1
+            phase_contrib = p0 + (p1 - p0) * bit_values
+            
+            # 累积相位
+            total_phase *= phase_contrib
+        
+        # 应用全局相位和总相位
+        final_phase = global_phase * total_phase
+        
+        # 应用相位到状态向量
+        new_state_vector = final_phase * new_state_vector
+        
+        # 转换回torch张量
+        return torch.tensor(new_state_vector, dtype=torch.complex64, device=state.device)
+
+
+class Hamiltonian(Operator):
+    """哈密顿量类，继承自Operator"""
+    
+    def __init__(self, num_qubits: int, use_sparse: bool = False, 
+                 use_decomposed: bool = False, device: torch.device = None):
+        super().__init__(num_qubits, [], use_sparse, use_decomposed, device)
+        
+    def add_pauli_term(self, pauli_string: str, qubit_indices: List[int], coefficient: complex = 1.0):
+        """添加泡利项"""
+        pauli_op = PauliStringOperator(pauli_string, qubit_indices, coefficient, 
+                                      self.num_qubits, self.use_sparse, self.use_decomposed, self.device)
+        self.add_term(pauli_op)
+        
+    def _get_matrix(self):
+        """哈密顿量的矩阵表示"""
+        if len(self.terms) == 0:
+            return torch.zeros(self.dim, self.dim, dtype=torch.complex64, device=self.device)
+        
+        H = torch.zeros(self.dim, self.dim, dtype=torch.complex64, device=self.device)
+        for term in self.terms:
+            H += term.get_matrix()
+        return H
     
     @classmethod
     def from_string(cls, hamiltonian_str: str, num_qubits: int, use_sparse: bool = False, 
@@ -313,6 +403,7 @@ class Hamiltonian(nn.Module):
         return H
 
 
+# 具体的哈密顿量模型类
 class HeisenbergHamiltonian(Hamiltonian):
     """海森堡模型哈密顿量"""
     
@@ -465,7 +556,6 @@ def create_hamiltonian(hamiltonian_type: str, **kwargs) -> Hamiltonian:
         num_qubits = kwargs.get('num_qubits')
         if num_qubits is None:
             # 尝试从字符串中推断量子比特数
-            import re
             indices = re.findall(r'\[([^\]]+)\]', hamiltonian_type)
             max_index = 0
             for index_str in indices:
