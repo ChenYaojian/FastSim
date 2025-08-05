@@ -146,9 +146,15 @@ class Operator(nn.Module):
                 return self.sparse_matrix @ state
             else:
                 # 稀疏矩阵形式
-                state_np = state.detach().cpu().numpy()
-                result_np = self.sparse_matrix @ state_np
-                return torch.tensor(result_np, dtype=torch.complex64, device=self.device)
+                # 对于GPU支持，我们需要将稀疏矩阵转换为密集矩阵
+                if hasattr(self.sparse_matrix, 'toarray'):
+                    dense_matrix = torch.tensor(self.sparse_matrix.toarray(), dtype=torch.complex64, device=self.device)
+                    return torch.matmul(dense_matrix, state.transpose(0, 1)).transpose(0, 1)
+                else:
+                    # 如果无法转换，回退到CPU处理
+                    state_np = state.detach().cpu().numpy()
+                    result_np = self.sparse_matrix @ state_np
+                    return torch.tensor(result_np, dtype=torch.complex64, device=self.device)
         else:
             # 使用密集矩阵形式
             if self.dense_matrix is None:
@@ -262,12 +268,12 @@ class PauliStringOperator(Operator):
         return self.coefficient * result
     
     def _apply_pauli_sequence_optimized(self, state: torch.Tensor, total_qubits: int) -> torch.Tensor:
-        """优化的泡利算符序列应用 - 合并处理方案"""
-        import numpy as np
+        """优化的泡利算符序列应用 - 合并处理方案（支持GPU）"""
         
-        # 转换为numpy数组以提高性能
-        state_np = state.detach().cpu().numpy()
-        num_states = len(state_np)
+        # 保持张量在原始设备上
+        device = state.device
+        dtype = state.dtype
+        num_states = state.size(-1)
         
         # 1. 为每个qubit维护翻转标志和相位
         transposition_flags = [False] * total_qubits  # 翻转标志
@@ -297,19 +303,19 @@ class PauliStringOperator(Operator):
                 
             # I算符：不改变任何东西
         
-        # 3. 统一进行置换操作
+        # 3. 统一进行置换操作（使用torch操作以支持GPU）
         # 计算基于翻转标志的掩码（注意：需要反转比特顺序以匹配张量积顺序）
         mask = sum(flag << (total_qubits - 1 - i) for i, flag in enumerate(transposition_flags))
         
         # 生成置换索引
-        perm_indices = np.arange(num_states) ^ mask
+        perm_indices = torch.arange(num_states, device=device) ^ mask
         
         # 应用置换
-        new_state_vector = state_np[perm_indices]
+        new_state_vector = state[..., perm_indices]
         
-        # 4. 统一进行相位操作
-        indices = np.arange(num_states)
-        total_phase = np.ones(num_states, dtype=np.complex128)
+        # 4. 统一进行相位操作（使用torch操作以支持GPU）
+        indices = torch.arange(num_states, device=device)
+        total_phase = torch.ones(num_states, dtype=dtype, device=device)
         
         for i in range(total_qubits):
             p0, p1 = phase_factors[i]
@@ -339,8 +345,7 @@ class PauliStringOperator(Operator):
         # 应用相位到状态向量
         new_state_vector = final_phase * new_state_vector
         
-        # 转换回torch张量
-        return torch.tensor(new_state_vector, dtype=torch.complex64, device=state.device)
+        return new_state_vector
 
 
 class Hamiltonian(Operator):
