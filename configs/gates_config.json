@@ -59,6 +59,12 @@
             "param_names": ["theta", "phi"]
         },
         {
+            "name": "CY",
+            "num_qubits": 2,
+            "is_parametric": false,
+            "matrix": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, "-j"], [0, 0, "j", 0]]
+        },
+        {
             "name": "CZ",
             "num_qubits": 2,
             "is_parametric": false,
