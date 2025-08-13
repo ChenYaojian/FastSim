@@ -106,6 +106,13 @@
             "is_parametric": true,
             "matrix_func": "lambda alpha, beta, gamma: [[exp(1j*alpha)*cos(gamma), -exp(-1j*beta)*sin(gamma)], [exp(1j*beta)*sin(gamma), exp(-1j*alpha)*cos(gamma)]]",
             "param_names": ["alpha", "beta", "gamma"]
+        },
+        {
+            "name": "HI",
+            "num_qubits": 2,
+            "is_parametric": true,
+            "matrix_func": "lambda theta_xx, theta_yy, theta_zz: [[exp(-1j*(theta_xx+theta_yy+theta_zz)/2), 0, 0, 0], [0, exp(-1j*(theta_xx-theta_yy+theta_zz)/2), 0, 0], [0, 0, exp(1j*(theta_xx+theta_yy-theta_zz)/2), 0], [0, 0, 0, exp(1j*(theta_xx-theta_yy-theta_zz)/2)]]",
+            "param_names": ["theta_xx", "theta_yy", "theta_zz"]
         }
     ]
 } 

@@ -1,0 +1,52 @@
+[
+  {
+    "architecture": "HI-2cycles",
+    "parameter_count": 34,
+    "hf_energy": 5.0,
+    "final_energy": -2.999998092651367,
+    "best_energy": -2.9999990463256836,
+    "iterations": 1000,
+    "improvement_percent": 159.99998092651367,
+    "optimization_time": 12.17882251739502
+  },
+  {
+    "architecture": "HI-4cycles",
+    "parameter_count": 68,
+    "hf_energy": 5.0,
+    "final_energy": -3.0000011920928955,
+    "best_energy": -3.0000016689300537,
+    "iterations": 589,
+    "improvement_percent": 160.00003337860107,
+    "optimization_time": 14.081291198730469
+  },
+  {
+    "architecture": "U+CZ-2layers",
+    "parameter_count": 24,
+    "hf_energy": 5.0,
+    "final_energy": -5.999999046325684,
+    "best_energy": -6.000001430511475,
+    "iterations": 447,
+    "improvement_percent": 220.0000286102295,
+    "optimization_time": 3.088038444519043
+  },
+  {
+    "architecture": "RX+RZ+CNOT-3layers",
+    "parameter_count": 24,
+    "hf_energy": 5.0,
+    "final_energy": -6.9998579025268555,
+    "best_energy": -6.9998579025268555,
+    "iterations": 1000,
+    "improvement_percent": 239.9971580505371,
+    "optimization_time": 12.333229541778564
+  },
+  {
+    "architecture": "Adaptive",
+    "parameter_count": 24,
+    "hf_energy": 5.0,
+    "final_energy": -6.0,
+    "best_energy": -6.000001907348633,
+    "iterations": 477,
+    "improvement_percent": 220.00003814697266,
+    "optimization_time": 3.347585678100586
+  }
+]
