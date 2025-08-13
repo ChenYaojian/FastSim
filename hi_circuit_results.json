@@ -1,0 +1,52 @@
+[
+  {
+    "num_cycles": 2,
+    "parameter_count": 34,
+    "hf_energy": 5.0,
+    "final_energy": -3.0000009536743164,
+    "best_energy": -3.0000014305114746,
+    "iterations": 905,
+    "improvement_percent": 160.0000286102295,
+    "optimization_time": 11.153501272201538
+  },
+  {
+    "num_cycles": 3,
+    "parameter_count": 51,
+    "hf_energy": 5.0,
+    "final_energy": -3.0000007152557373,
+    "best_energy": -3.000002145767212,
+    "iterations": 616,
+    "improvement_percent": 160.00004291534424,
+    "optimization_time": 10.645983934402466
+  },
+  {
+    "num_cycles": 4,
+    "parameter_count": 68,
+    "hf_energy": 5.0,
+    "final_energy": -3.0000009536743164,
+    "best_energy": -3.000002384185791,
+    "iterations": 979,
+    "improvement_percent": 160.00004768371582,
+    "optimization_time": 23.415215730667114
+  },
+  {
+    "num_cycles": 5,
+    "parameter_count": 85,
+    "hf_energy": 5.0,
+    "final_energy": -2.9999990463256836,
+    "best_energy": -3.000002145767212,
+    "iterations": 624,
+    "improvement_percent": 160.00004291534424,
+    "optimization_time": 18.680372953414917
+  },
+  {
+    "num_cycles": 6,
+    "parameter_count": 102,
+    "hf_energy": 5.0,
+    "final_energy": -2.9999992847442627,
+    "best_energy": -3.0000014305114746,
+    "iterations": 723,
+    "improvement_percent": 160.0000286102295,
+    "optimization_time": 25.655044317245483
+  }
+]

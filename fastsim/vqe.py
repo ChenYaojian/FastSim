@@ -839,3 +839,231 @@ def build_pqc_adaptive(num_qubits: int, device: torch.device = None) -> PQC:
     else:
         # 大系统：4层交替纠缠
         return build_pqc_alternating(num_qubits, num_layers=4, device=device) 
+
+
+def build_pqc_hi_paper(num_qubits: int, num_cycles: int = 2, device: torch.device = None) -> PQC:
+    """
+    构建论文arXiv:2007.10917v2中的HI电路结构
+    
+    Args:
+        num_qubits: 量子比特数（应该是4的倍数）
+        num_cycles: cycle数量，每个cycle包含一层单比特门和一层双比特门
+        device: 计算设备
+        
+    Returns:
+        PQC: 参数化量子电路
+    """
+    if num_qubits % 4 != 0:
+        raise ValueError(f"量子比特数必须是4的倍数，当前为{num_qubits}")
+    
+    pqc = PQC(num_qubits, device)
+    
+    # 定义4比特子系统的边连接方式 E = {(0,1), (1,2), (2,3), (3,0), (0,2)}
+    edges_4qubit = [(0, 1), (1, 2), (2, 3), (3, 0), (0, 2)]
+    
+    for cycle in range(num_cycles):
+        # 每个cycle包含：
+        # 1. 一层单比特U门
+        for i in range(num_qubits):
+            pqc.add_parametric_gate("U", [i])
+        
+        # 2. 一层双比特HI门，按照论文的连接方式
+        for block in range(num_qubits // 4):
+            offset = block * 4
+            for edge in edges_4qubit:
+                q1 = offset + edge[0]
+                q2 = offset + edge[1]
+                if q2 < num_qubits:  # 确保不超出范围
+                    pqc.add_parametric_gate("HI", [q1, q2])
+    
+    return pqc
+
+
+def test_hi_circuit_performance():
+    """
+    测试HI电路在不同cycle数下的性能
+    """
+    import torch
+    from .circuit import load_gates_from_config
+    import time
+    
+    # 加载门配置
+    load_gates_from_config("configs/gates_config.json")
+    print("==== HI电路性能测试 ====")
+    
+    # 设置设备
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"使用设备: {device}")
+    
+    # 创建4比特paper哈密顿量
+    N = 1  # 4比特系统
+    H = create_paper_4N_heisenberg_hamiltonian(N, device)
+    print(f"哈密顿量维度: {H.shape}")
+    
+    # 测试不同的cycle数
+    cycle_counts = [2, 3, 4, 5, 6]
+    results = []
+    
+    for num_cycles in cycle_counts:
+        print(f"\n--- 测试 {num_cycles} cycles ---")
+        
+        # 创建HI电路
+        start_time = time.time()
+        pqc = build_pqc_hi_paper(4, num_cycles, device)
+        circuit_time = time.time() - start_time
+        
+        print(f"电路创建时间: {circuit_time:.4f}秒")
+        print(f"参数数量: {pqc.parameter_count}")
+        
+        # 创建VQE
+        vqe = VQE(pqc, H, optimizer_kwargs={'lr': 0.01})
+        
+        # 使用Hartree-Fock初态
+        hf_state = get_hf_init_state(4)
+        hf_energy = vqe.expectation_value(hf_state).item()
+        print(f"HF能量: {hf_energy:.6f}")
+        
+        # VQE优化
+        start_time = time.time()
+        result = vqe.optimize(num_iterations=1000, input_state=hf_state, 
+                            convergence_threshold=1e-6, patience=200)
+        opt_time = time.time() - start_time
+        
+        print(f"优化时间: {opt_time:.4f}秒")
+        print(f"最终能量: {result['final_energy']:.6f}")
+        print(f"最优能量: {result['best_energy']:.6f}")
+        print(f"迭代次数: {result['iterations']}")
+        
+        # 计算能量改善
+        improvement = (hf_energy - result['best_energy']) / abs(hf_energy) * 100
+        
+        results.append({
+            'num_cycles': num_cycles,
+            'parameter_count': pqc.parameter_count,
+            'hf_energy': hf_energy,
+            'final_energy': result['final_energy'],
+            'best_energy': result['best_energy'],
+            'iterations': result['iterations'],
+            'improvement_percent': improvement,
+            'optimization_time': opt_time
+        })
+    
+    # 打印总结
+    print(f"\n{'='*80}")
+    print("HI电路性能测试结果总结")
+    print(f"{'='*80}")
+    print(f"{'Cycles':<8} {'参数数':<8} {'HF能量':<12} {'最优能量':<12} {'改善%':<8} {'迭代数':<8}")
+    print("-" * 80)
+    
+    for result in results:
+        print(f"{result['num_cycles']:<8} {result['parameter_count']:<8} "
+              f"{result['hf_energy']:<12.6f} {result['best_energy']:<12.6f} "
+              f"{result['improvement_percent']:<8.2f} {result['iterations']:<8}")
+    
+    return results
+
+
+def compare_circuit_architectures():
+    """
+    比较不同电路架构的性能
+    """
+    import torch
+    from .circuit import load_gates_from_config
+    import time
+    
+    # 加载门配置
+    load_gates_from_config("configs/gates_config.json")
+    print("==== 电路架构比较测试 ====")
+    
+    # 设置设备
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"使用设备: {device}")
+    
+    # 创建4比特paper哈密顿量
+    N = 1  # 4比特系统
+    H = create_paper_4N_heisenberg_hamiltonian(N, device)
+    
+    # 定义要比较的电路架构
+    architectures = [
+        {
+            'name': 'HI-2cycles',
+            'builder': lambda: build_pqc_hi_paper(4, 2, device)
+        },
+        {
+            'name': 'HI-4cycles', 
+            'builder': lambda: build_pqc_hi_paper(4, 4, device)
+        },
+        {
+            'name': 'U+CZ-2layers',
+            'builder': lambda: build_pqc_u_cz(4, 2, device=device)
+        },
+        {
+            'name': 'RX+RZ+CNOT-3layers',
+            'builder': lambda: build_pqc_rx_rz_cnot(4, 3, device=device)
+        },
+        {
+            'name': 'Adaptive',
+            'builder': lambda: build_pqc_adaptive(4, device=device)
+        }
+    ]
+    
+    results = []
+    
+    for arch in architectures:
+        print(f"\n--- 测试 {arch['name']} ---")
+        
+        # 创建电路
+        start_time = time.time()
+        pqc = arch['builder']()
+        circuit_time = time.time() - start_time
+        
+        print(f"电路创建时间: {circuit_time:.4f}秒")
+        print(f"参数数量: {pqc.parameter_count}")
+        
+        # 创建VQE
+        vqe = VQE(pqc, H, optimizer_kwargs={'lr': 0.01})
+        
+        # 使用Hartree-Fock初态
+        hf_state = get_hf_init_state(4)
+        hf_energy = vqe.expectation_value(hf_state).item()
+        print(f"HF能量: {hf_energy:.6f}")
+        
+        # VQE优化
+        start_time = time.time()
+        result = vqe.optimize(num_iterations=1000, input_state=hf_state, 
+                            convergence_threshold=1e-6, patience=200)
+        opt_time = time.time() - start_time
+        
+        print(f"优化时间: {opt_time:.4f}秒")
+        print(f"最终能量: {result['final_energy']:.6f}")
+        print(f"最优能量: {result['best_energy']:.6f}")
+        print(f"迭代次数: {result['iterations']}")
+        
+        # 计算能量改善
+        improvement = (hf_energy - result['best_energy']) / abs(hf_energy) * 100
+        
+        results.append({
+            'architecture': arch['name'],
+            'parameter_count': pqc.parameter_count,
+            'hf_energy': hf_energy,
+            'final_energy': result['final_energy'],
+            'best_energy': result['best_energy'],
+            'iterations': result['iterations'],
+            'improvement_percent': improvement,
+            'optimization_time': opt_time
+        })
+    
+    # 打印总结
+    print(f"\n{'='*100}")
+    print("电路架构比较结果总结")
+    print(f"{'='*100}")
+    print(f"{'架构':<20} {'参数数':<8} {'HF能量':<12} {'最优能量':<12} {'改善%':<8} {'迭代数':<8} {'时间(s)':<8}")
+    print("-" * 100)
+    
+    for result in results:
+        print(f"{result['architecture']:<20} {result['parameter_count']:<8} "
+              f"{result['hf_energy']:<12.6f} {result['best_energy']:<12.6f} "
+              f"{result['improvement_percent']:<8.2f} {result['iterations']:<8} "
+              f"{result['optimization_time']:<8.2f}")
+    
+    return results 

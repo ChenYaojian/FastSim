@@ -259,8 +259,13 @@ class PauliStringOperator(Operator):
             # 将单个样本的state重塑为1D向量
             single_state = state[i]
             
-            # 使用优化的泡利串合并处理
-            result_state = self._apply_pauli_sequence_optimized(single_state, total_qubits)
+            # 根据设备选择优化版本
+            if single_state.device.type == 'cuda' and total_qubits >= 8:
+                # 对于GPU和大系统，使用GPU优化版本
+                result_state = self._apply_pauli_sequence_gpu_optimized(single_state, total_qubits)
+            else:
+                # 对于CPU或小系统，使用原始优化版本
+                result_state = self._apply_pauli_sequence_optimized(single_state, total_qubits)
             new_states.append(result_state)
         
         # 将处理后的状态堆叠成batch并应用系数
@@ -344,6 +349,73 @@ class PauliStringOperator(Operator):
         
         # 应用相位到状态向量
         new_state_vector = final_phase * new_state_vector
+        
+        return new_state_vector
+    
+    def _apply_pauli_sequence_gpu_optimized(self, state: torch.Tensor, total_qubits: int) -> torch.Tensor:
+        """GPU优化的泡利算符序列应用 - 向量化批处理版本"""
+        
+        device = state.device
+        dtype = state.dtype
+        num_states = state.size(-1)
+        
+        # 1. 预计算所有泡利算符的影响（向量化）
+        # 创建影响矩阵：每个泡利算符对每个比特的影响
+        pauli_effects = torch.zeros(len(self.pauli_string), total_qubits, 2, dtype=dtype, device=device)
+        
+        for i, (pauli, qubit_idx) in enumerate(zip(self.pauli_string, self.qubit_indices)):
+            if qubit_idx >= total_qubits:
+                continue
+                
+            if pauli == 'X':
+                pauli_effects[i, qubit_idx, 0] = 0.0  # 置换标志
+                pauli_effects[i, qubit_idx, 1] = 1.0   # 相位标志
+            elif pauli == 'Y':
+                pauli_effects[i, qubit_idx, 0] = 0.0   # 置换标志
+                pauli_effects[i, qubit_idx, 1] = 1j    # 相位标志
+            elif pauli == 'Z':
+                pauli_effects[i, qubit_idx, 0] = 0.0   # 无置换
+                pauli_effects[i, qubit_idx, 1] = -1.0  # 相位翻转
+        
+        # 2. 批量计算总置换和相位（向量化）
+        # 计算总置换掩码
+        # 注意：pauli_effects[:, :, 0] 应该是布尔值或整数，不是复数
+        total_transposition = torch.sum(pauli_effects[:, :, 0].real, dim=0) % 2
+        mask = torch.sum(total_transposition * (2 ** torch.arange(total_qubits, device=device)), dim=0).long()
+        
+        # 生成置换索引
+        perm_indices = torch.arange(num_states, device=device) ^ mask
+        
+        # 应用置换
+        new_state_vector = state[..., perm_indices]
+        
+        # 3. 批量计算相位（向量化）
+        indices = torch.arange(num_states, device=device)
+        
+        # 预计算所有比特的相位贡献
+        phase_contributions = torch.ones(total_qubits, num_states, dtype=dtype, device=device)
+        
+        for i in range(total_qubits):
+            # 计算该比特的总相位影响
+            bit_phase_effects = pauli_effects[:, i, 1]
+            non_zero_effects = bit_phase_effects[bit_phase_effects != 0]
+            
+            if len(non_zero_effects) > 0:
+                # 计算该比特的相位
+                bit_values = (indices >> (total_qubits - 1 - i)) & 1
+                
+                # 应用所有非零相位影响
+                for effect in non_zero_effects:
+                    if effect == 1j:
+                        # Y算符的特殊处理
+                        phase_contributions[i] *= torch.where(bit_values == 0, 1j, -1j)
+                    elif effect == -1:
+                        # Z算符的处理
+                        phase_contributions[i] *= torch.where(bit_values == 1, -1.0, 1.0)
+        
+        # 4. 应用总相位
+        total_phase = torch.prod(phase_contributions, dim=0)
+        new_state_vector = total_phase * new_state_vector
         
         return new_state_vector
 
