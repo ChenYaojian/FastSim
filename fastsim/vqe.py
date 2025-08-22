@@ -76,6 +76,8 @@ class PQC(Circuit):
         """
         if seed is not None:
             torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(seed)
         
         for gate, _ in self.gates:
             if hasattr(gate, 'param_names'):
@@ -115,7 +117,13 @@ class VQE(nn.Module):
         """
         super().__init__()
         self.pqc = pqc
-        self.hamiltonian = hamiltonian
+        
+        # 确保哈密顿量和PQC在同一个设备上
+        device = next(self.pqc.parameters()).device if list(self.pqc.parameters()) else torch.device('cpu')
+        if isinstance(hamiltonian, torch.Tensor):
+            self.hamiltonian = hamiltonian.to(device)
+        else:
+            self.hamiltonian = hamiltonian
         
         # 设置优化器
         if optimizer_kwargs is None:
@@ -143,6 +151,10 @@ class VQE(nn.Module):
         if state.ndim == 1:
             # 如果是1D向量，转换为(batch=1, dim)
             state = state.unsqueeze(0)
+        
+        # 确保状态向量和哈密顿量在同一个设备上
+        if isinstance(self.hamiltonian, torch.Tensor):
+            state = state.to(self.hamiltonian.device)
         
         # 检查哈密顿量类型
         if hasattr(self.hamiltonian, '__matmul__') and not isinstance(self.hamiltonian, torch.Tensor):
@@ -616,6 +628,15 @@ def create_paper_4N_heisenberg_hamiltonian(N, device=None):
     N: 子系统数，总比特数为4*N
     """
     num_qubits = 4 * N
+    
+    # 对于大系统（>10比特），使用分解模式
+    if num_qubits > 10:
+        print(f"Large system detected ({num_qubits} qubits), using decomposed Hamiltonian")
+        from .hamiltonian import Paper4NHeisenbergHamiltonian
+        return Paper4NHeisenbergHamiltonian(N, use_decomposed=True, device=device)
+    
+    # 小系统使用密集矩阵
+    print(f"Small system ({num_qubits} qubits), using dense matrix")
     dim = 2 ** num_qubits
     H = torch.zeros(dim, dim, dtype=torch.complex64, device=device)
     # Pauli矩阵
@@ -656,48 +677,7 @@ def create_paper_4N_heisenberg_hamiltonian(N, device=None):
     return H 
 
 
-def test_vqe_with_hf_init():
-    """
-    用Hartree-Fock初态初始化VQE，验证收敛能量与HF能量对比
-    """
-    import torch
-    from .circuit import Circuit, QuantumGate, load_gates_from_config
-    import os
-    load_gates_from_config("configs/gates_config.json")
-    print("==== VQE with Hartree-Fock 初始化测试 ====")
-    
-    for num_qubits in [4, 8, 12]:
-        print(f"\n--- {num_qubits} 比特系统 ---")
-        H = create_heisenberg_hamiltonian(num_qubits)
-        
-        # 使用自适应PQC构建
-        pqc = build_pqc_adaptive(num_qubits)
-        print(f"使用自适应PQC: {pqc.parameter_count} 个参数")
-        
-        # 根据系统大小调整学习率
-        lr = 0.01 if num_qubits <= 8 else 0.005
-        vqe = VQE(pqc, H, optimizer_kwargs={'lr': lr})
-        
-        # HF初态
-        hf_state = get_hf_init_state(num_qubits)
-        
-        # HF能量
-        hf_energy = vqe.expectation_value(hf_state).item()
-        print(f"HF能量: {hf_energy:.6f}")
-        
-        # VQE优化 - 根据系统大小调整迭代次数
-        max_iterations = 1000 if num_qubits <= 8 else 2000
-        patience = 200 if num_qubits <= 8 else 300
-        result = vqe.optimize(num_iterations=max_iterations, input_state=hf_state, 
-                            convergence_threshold=1e-6, patience=patience)
-        
-        print(f"VQE最终能量: {result['final_energy']:.6f}, 最优能量: {result['best_energy']:.6f}")
-        print("能量差: ", result['final_energy'] - hf_energy)
-        print(f"总迭代次数: {result['iterations']}")
-        
-        # 计算能量改善百分比
-        improvement = (hf_energy - result['final_energy']) / abs(hf_energy) * 100
-        print(f"能量改善: {improvement:.2f}%") 
+ 
 
 
 def build_pqc_u_cz(num_qubits: int, num_layers: int = 2, closed_chain: bool = False, 
@@ -873,197 +853,114 @@ def build_pqc_hi_paper(num_qubits: int, num_cycles: int = 2, device: torch.devic
             for edge in edges_4qubit:
                 q1 = offset + edge[0]
                 q2 = offset + edge[1]
-                if q2 < num_qubits:  # 确保不超出范围
-                    pqc.add_parametric_gate("HI", [q1, q2])
+                if q2 < num_qubits:  # 确保不超出范围   
+                    pqc.add_parametric_gate("HI_ZZ", [q1, q2])
+                    pqc.add_parametric_gate("HI_YY", [q1, q2])
+                    pqc.add_parametric_gate("HI_XX", [q1, q2])
+
     
     return pqc
 
 
-def test_hi_circuit_performance():
+def build_pqc_hi_paper_4N(num_qubits: int, num_cycles: int = 2, device: torch.device = None) -> PQC:
     """
-    测试HI电路在不同cycle数下的性能
+    构建4*N的PQC：将4*N个比特分成N组，每组4个比特按照HI论文方式构建，
+    然后添加组间连接
+    
+    Args:
+        num_qubits: 量子比特数（应该是4的倍数）
+        num_cycles: cycle数量，每个cycle包含一层单比特门和一层双比特门
+        device: 计算设备
+        
+    Returns:
+        PQC: 参数化量子电路
     """
-    import torch
-    from .circuit import load_gates_from_config
-    import time
+    if num_qubits % 4 != 0:
+        raise ValueError(f"量子比特数必须是4的倍数，当前为{num_qubits}")
     
-    # 加载门配置
-    load_gates_from_config("configs/gates_config.json")
-    print("==== HI电路性能测试 ====")
+    N = num_qubits // 4  # 子系统数量
+    pqc = PQC(num_qubits, device)
     
-    # 设置设备
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"使用设备: {device}")
+    # 定义4比特子系统的边连接方式 E = {(0,1), (1,2), (2,3), (3,0), (0,2)}
+    edges_4qubit = [(0, 1), (1, 2), (2, 3), (3, 0), (0, 2)]
     
-    # 创建4比特paper哈密顿量
-    N = 1  # 4比特系统
-    H = create_paper_4N_heisenberg_hamiltonian(N, device)
-    print(f"哈密顿量维度: {H.shape}")
+    for cycle in range(num_cycles):
+        # 每个cycle包含：
+        # 1. 一层单比特U门
+        for i in range(num_qubits):
+            pqc.add_parametric_gate("U", [i])
+        
+        # 2. 一层双比特HI门，按照论文的连接方式（组内连接）
+        for block in range(N):
+            offset = block * 4
+            for edge in edges_4qubit:
+                q1 = offset + edge[0]
+                q2 = offset + edge[1]
+                pqc.add_parametric_gate("HI_ZZ", [q1, q2])
+                pqc.add_parametric_gate("HI_YY", [q1, q2])
+                pqc.add_parametric_gate("HI_XX", [q1, q2])
     
-    # 测试不同的cycle数
-    cycle_counts = [2, 3, 4, 5, 6]
-    results = []
+        # 构建完毕后，在每个比特上加一层单比特U门
+        for i in range(num_qubits):
+            pqc.add_parametric_gate("U", [i])
     
-    for num_cycles in cycle_counts:
-        print(f"\n--- 测试 {num_cycles} cycles ---")
-        
-        # 创建HI电路
-        start_time = time.time()
-        pqc = build_pqc_hi_paper(4, num_cycles, device)
-        circuit_time = time.time() - start_time
-        
-        print(f"电路创建时间: {circuit_time:.4f}秒")
-        print(f"参数数量: {pqc.parameter_count}")
-        
-        # 创建VQE
-        vqe = VQE(pqc, H, optimizer_kwargs={'lr': 0.01})
-        
-        # 使用Hartree-Fock初态
-        hf_state = get_hf_init_state(4)
-        hf_energy = vqe.expectation_value(hf_state).item()
-        print(f"HF能量: {hf_energy:.6f}")
-        
-        # VQE优化
-        start_time = time.time()
-        result = vqe.optimize(num_iterations=1000, input_state=hf_state, 
-                            convergence_threshold=1e-6, patience=200)
-        opt_time = time.time() - start_time
-        
-        print(f"优化时间: {opt_time:.4f}秒")
-        print(f"最终能量: {result['final_energy']:.6f}")
-        print(f"最优能量: {result['best_energy']:.6f}")
-        print(f"迭代次数: {result['iterations']}")
-        
-        # 计算能量改善
-        improvement = (hf_energy - result['best_energy']) / abs(hf_energy) * 100
-        
-        results.append({
-            'num_cycles': num_cycles,
-            'parameter_count': pqc.parameter_count,
-            'hf_energy': hf_energy,
-            'final_energy': result['final_energy'],
-            'best_energy': result['best_energy'],
-            'iterations': result['iterations'],
-            'improvement_percent': improvement,
-            'optimization_time': opt_time
-        })
+        # 将第i组的2号比特和第i+1组的0号比特用HI门连接起来
+        for i in range(N - 1):
+            q1 = i * 4 + 2  # 第i组的2号比特
+            q2 = (i + 1) * 4 + 0  # 第i+1组的0号比特
+            pqc.add_parametric_gate("HI_ZZ", [q1, q2])
+            pqc.add_parametric_gate("HI_YY", [q1, q2])
+            pqc.add_parametric_gate("HI_XX", [q1, q2])
     
-    # 打印总结
-    print(f"\n{'='*80}")
-    print("HI电路性能测试结果总结")
-    print(f"{'='*80}")
-    print(f"{'Cycles':<8} {'参数数':<8} {'HF能量':<12} {'最优能量':<12} {'改善%':<8} {'迭代数':<8}")
-    print("-" * 80)
-    
-    for result in results:
-        print(f"{result['num_cycles']:<8} {result['parameter_count']:<8} "
-              f"{result['hf_energy']:<12.6f} {result['best_energy']:<12.6f} "
-              f"{result['improvement_percent']:<8.2f} {result['iterations']:<8}")
-    
-    return results
+    return pqc
 
 
-def compare_circuit_architectures():
+def compute_ground_state_4qubit(hamiltonian, device):
     """
-    比较不同电路架构的性能
+    计算4比特系统的基态
+    
+    Args:
+        hamiltonian: 4比特哈密顿量
+        device: 计算设备
+        
+    Returns:
+        ground_state: 基态向量
+        ground_energy: 基态能量
     """
-    import torch
-    from .circuit import load_gates_from_config
-    import time
+    # 对角化哈密顿量
+    eigenvals, eigenvecs = torch.linalg.eigh(hamiltonian)
+    ground_energy = eigenvals[0].real.item()
+    ground_state = eigenvecs[:, 0]
     
-    # 加载门配置
-    load_gates_from_config("configs/gates_config.json")
-    print("==== 电路架构比较测试 ====")
+    # 确保基态向量是2D的 (batch_size=1, state_dim)
+    if ground_state.ndim == 1:
+        ground_state = ground_state.unsqueeze(0)
     
-    # 设置设备
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"使用设备: {device}")
+    return ground_state, ground_energy
+
+
+def create_product_state_from_4qubit_ground(ground_state_4qubit, num_blocks, device):
+    """
+    从4比特基态创建直积态
     
-    # 创建4比特paper哈密顿量
-    N = 1  # 4比特系统
-    H = create_paper_4N_heisenberg_hamiltonian(N, device)
-    
-    # 定义要比较的电路架构
-    architectures = [
-        {
-            'name': 'HI-2cycles',
-            'builder': lambda: build_pqc_hi_paper(4, 2, device)
-        },
-        {
-            'name': 'HI-4cycles', 
-            'builder': lambda: build_pqc_hi_paper(4, 4, device)
-        },
-        {
-            'name': 'U+CZ-2layers',
-            'builder': lambda: build_pqc_u_cz(4, 2, device=device)
-        },
-        {
-            'name': 'RX+RZ+CNOT-3layers',
-            'builder': lambda: build_pqc_rx_rz_cnot(4, 3, device=device)
-        },
-        {
-            'name': 'Adaptive',
-            'builder': lambda: build_pqc_adaptive(4, device=device)
-        }
-    ]
-    
-    results = []
-    
-    for arch in architectures:
-        print(f"\n--- 测试 {arch['name']} ---")
+    Args:
+        ground_state_4qubit: 4比特基态向量
+        num_blocks: 块数（总比特数 = 4 * num_blocks）
+        device: 计算设备
         
-        # 创建电路
-        start_time = time.time()
-        pqc = arch['builder']()
-        circuit_time = time.time() - start_time
-        
-        print(f"电路创建时间: {circuit_time:.4f}秒")
-        print(f"参数数量: {pqc.parameter_count}")
-        
-        # 创建VQE
-        vqe = VQE(pqc, H, optimizer_kwargs={'lr': 0.01})
-        
-        # 使用Hartree-Fock初态
-        hf_state = get_hf_init_state(4)
-        hf_energy = vqe.expectation_value(hf_state).item()
-        print(f"HF能量: {hf_energy:.6f}")
-        
-        # VQE优化
-        start_time = time.time()
-        result = vqe.optimize(num_iterations=1000, input_state=hf_state, 
-                            convergence_threshold=1e-6, patience=200)
-        opt_time = time.time() - start_time
-        
-        print(f"优化时间: {opt_time:.4f}秒")
-        print(f"最终能量: {result['final_energy']:.6f}")
-        print(f"最优能量: {result['best_energy']:.6f}")
-        print(f"迭代次数: {result['iterations']}")
-        
-        # 计算能量改善
-        improvement = (hf_energy - result['best_energy']) / abs(hf_energy) * 100
-        
-        results.append({
-            'architecture': arch['name'],
-            'parameter_count': pqc.parameter_count,
-            'hf_energy': hf_energy,
-            'final_energy': result['final_energy'],
-            'best_energy': result['best_energy'],
-            'iterations': result['iterations'],
-            'improvement_percent': improvement,
-            'optimization_time': opt_time
-        })
+    Returns:
+        product_state: 直积态向量
+    """
+    # 计算总比特数
+    num_qubits = 4 * num_blocks
     
-    # 打印总结
-    print(f"\n{'='*100}")
-    print("电路架构比较结果总结")
-    print(f"{'='*100}")
-    print(f"{'架构':<20} {'参数数':<8} {'HF能量':<12} {'最优能量':<12} {'改善%':<8} {'迭代数':<8} {'时间(s)':<8}")
-    print("-" * 100)
+    # 创建直积态：|ψ⟩⊗|ψ⟩⊗...⊗|ψ⟩
+    product_state = ground_state_4qubit.clone()
     
-    for result in results:
-        print(f"{result['architecture']:<20} {result['parameter_count']:<8} "
-              f"{result['hf_energy']:<12.6f} {result['best_energy']:<12.6f} "
-              f"{result['improvement_percent']:<8.2f} {result['iterations']:<8} "
-              f"{result['optimization_time']:<8.2f}")
+    for _ in range(num_blocks - 1):
+        # 计算当前直积态的维度
+        current_dim = product_state.size(0)
+        # 与4比特基态做张量积
+        product_state = torch.kron(product_state, ground_state_4qubit)
     
-    return results 
+    return product_state.to(device)
