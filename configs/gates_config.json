@@ -119,6 +119,28 @@
             "is_parametric": true,
             "matrix_func": "lambda theta_xx, theta_yy, theta_zz: [[exp(-1j*(theta_xx+theta_yy+theta_zz)/2), 0, 0, 0], [0, exp(-1j*(theta_xx-theta_yy+theta_zz)/2), 0, 0], [0, 0, exp(1j*(theta_xx+theta_yy-theta_zz)/2), 0], [0, 0, 0, exp(1j*(theta_xx-theta_yy-theta_zz)/2)]]",
             "param_names": ["theta_xx", "theta_yy", "theta_zz"]
-        }
+        },
+        {
+            "name": "HI_XX",
+             "num_qubits": 2,
+             "is_parametric": true,
+             "matrix_func": "lambda theta: [[cos(theta), 0, 0, -1j*sin(theta)], [0, cos(theta), -1j*sin(theta), 0], [0, -1j*sin(theta), cos(theta), 0], [-1j*sin(theta), 0, 0, cos(theta)]]",
+             "param_names": ["theta"] 
+         },
+         {
+             "name": "HI_YY",
+              "num_qubits": 2,
+              "is_parametric": true,
+              "matrix_func": "lambda theta: [[cos(theta), 0, 0, 1j*sin(theta)], [0, cos(theta), -1j*sin(theta), 0], [0, -1j*sin(theta), cos(theta), 0], [1j*sin(theta), 0, 0, cos(theta)]]",
+             "param_names": ["theta"] 
+          },
+          {
+             "name": "HI_ZZ",
+              "num_qubits": 2,
+              "is_parametric": true,
+              "matrix_func": "lambda theta: [[exp(-1j*theta), 0, 0, 0], [0, exp(1j*theta), 0, 0], [0, 0, exp(1j*theta), 0], [0, 0, 0, exp(-1j*theta)]]",
+             "param_names": ["theta"] 
+          }
+ 
     ]
 } 
