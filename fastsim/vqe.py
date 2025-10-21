@@ -560,6 +560,30 @@ def create_pqc_from_config(circuit_config: Dict, num_qubits: int = None,
     return pqc
 
 
+def create_random_hamiltonian(num_qubits: int, device: torch.device = None):
+    """创建随机哈密顿量用于测试"""
+    dim = 2 ** num_qubits
+    if device is None:
+        device = torch.device('cpu')
+    
+    # 创建随机厄米矩阵
+    H_real = torch.randn(dim, dim, device=device)
+    H_imag = torch.randn(dim, dim, device=device)
+    H = H_real + 1j * H_imag
+    
+    # 确保厄米性
+    H = (H + H.conj().T) / 2
+    
+    return H
+
+
+def create_quasi_1d_afm_hamiltonian(num_qubits: int, J_perp: float = 0.5, 
+                                   J_parallel: float = 1.0, h: float = 0.0, 
+                                   device: torch.device = None):
+    """创建准一维反铁磁模型哈密顿量"""
+    return Quasi1DAFMHamiltonian(num_qubits, J_perp, J_parallel, h, device)
+
+
 def create_heisenberg_hamiltonian(num_qubits: int, J: float = 1.0, 
                                  h: float = 0.0, device: torch.device = None):
     """创建海森堡模型哈密顿量，大系统使用黑盒矩阵-向量乘法"""
@@ -568,7 +592,7 @@ def create_heisenberg_hamiltonian(num_qubits: int, J: float = 1.0,
     # 对于大系统（>10比特），使用黑盒方式
     if num_qubits > 10:
         print(f"Large system detected ({num_qubits} qubits), using black-box matrix-vector multiplication")
-        return HeisenbergHamiltonianOperator(num_qubits, J, h, device)
+        return HeisenbergHamiltonian(num_qubits, J, h, device)
     
     # 小系统使用密集矩阵
     print(f"Small system ({num_qubits} qubits), using dense matrix")

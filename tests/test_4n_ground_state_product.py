@@ -24,7 +24,7 @@ def test_4n_systems_with_ground_state_product():
     测试8、12、16比特系统使用4比特基态直积作为初态的效果
     """
     # 加载门配置
-    load_gates_from_config("../configs/gates_config.json")
+    load_gates_from_config("configs/gates_config.json")
     print("==== 4*N系统测试（使用4比特基态直积作为初态） ====")
     
     # 设置设备
