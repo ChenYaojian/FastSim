@@ -163,7 +163,7 @@ def main():
     print_comparison_with_heisenberg()
     
     # 配置参数
-    num_qubits_list = [4, 8, 12, 15]  # 量子比特数
+    num_qubits_list = [4, 6]  # 量子比特数（减少以节省内存）
     circuit_path = os.path.join(project_root, "data", "circuit_0623_converted.json")
     
     # 准一维AFM参数（典型值）
@@ -178,7 +178,7 @@ def main():
         J_perp=J_perp,
         J_parallel=J_parallel,
         h=h,
-        num_iterations=1000,
+        num_iterations=100,  # 减少迭代次数以节省时间
         lr=0.01
     )
     

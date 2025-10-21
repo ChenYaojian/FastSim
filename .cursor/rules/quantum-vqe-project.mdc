@@ -1,0 +1,76 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 量子VQE项目结构指南
+
+## 项目概述
+这是一个基于PyTorch的变分量子本征求解器(VQE)实现，用于求解量子系统的基态能量。
+
+## 核心模块
+
+### VQE模块 [fastsim/vqe.py](mdc:fastsim/vqe.py)
+- **PQC类**: 参数化量子电路，支持参数化门的添加和管理
+- **VQE类**: 变分量子本征求解器，实现能量优化算法
+- **关键函数**:
+  - `build_pqc_hi_paper_4N()`: 构建4*N结构的PQC
+  - `create_paper_4N_heisenberg_hamiltonian()`: 创建4*N海森堡哈密顿量
+  - `compute_ground_state_4qubit()`: 计算4比特系统基态
+  - `create_product_state_from_4qubit_ground()`: 从4比特基态创建直积态
+
+### 哈密顿量模块 [fastsim/hamiltonian.py](mdc:fastsim/hamiltonian.py)
+- **PauliStringOperator**: 表示单个Pauli字符串项
+- **Paper4NHeisenbergHamiltonian**: 4*N海森堡哈密顿量的分解实现
+- 支持密集矩阵和分解模式两种表示方法
+
+### 电路模块 [fastsim/circuit.py](mdc:fastsim/circuit.py)
+- **Circuit类**: 基础量子电路实现
+- **QuantumGate**: 量子门基类
+- 支持从配置文件加载门定义
+
+## 关键概念
+
+### 4*N PQC结构
+- 将4*N个比特分成N组，每组4个比特
+- 组内按照HI论文方式构建连接
+- 组间通过2-0连接（第i组的2号比特连接第i+1组的0号比特）
+
+### 直积态初始化策略
+- 计算4比特系统的精确基态
+- 使用基态的直积态作为VQE的初始态
+- 比Hartree-Fock初态提供更好的初始近似
+
+### 设备兼容性
+- 支持CPU和GPU计算
+- 大系统(>10比特)自动使用分解模式
+- 确保CPU和GPU版本结果一致
+
+## 测试结构
+
+### 测试脚本 [tests/test_4n_ground_state_product.py](mdc:tests/test_4n_ground_state_product.py)
+- 测试8、12、16比特系统使用4比特基态直积作为初态的效果
+- 比较直积态与Hartree-Fock初态的性能
+- 分析能量改善和收敛性
+
+### 配置文件 [configs/gates_config.json](mdc:configs/gates_config.json)
+- 定义量子门的参数和实现
+
+## 使用模式
+
+### 基本VQE流程
+1. 创建哈密顿量（密集矩阵或分解模式）
+2. 构建PQC（选择合适的架构）
+3. 准备初始态（直积态或Hartree-Fock）
+4. 运行VQE优化
+5. 分析结果和收敛性
+
+### 性能优化策略
+- 对于大系统使用分解哈密顿量
+- 使用直积态作为初始态改善收敛
+- 根据系统大小调整学习率和迭代次数
+
+## 注意事项
+- 确保门配置正确加载
+- 注意设备一致性（CPU/GPU）
+- 大系统测试需要足够的内存和计算资源

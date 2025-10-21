@@ -1,0 +1,110 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 测试指南
+
+## 测试文件组织
+
+### 测试脚本位置
+所有测试脚本应放在 [tests/](mdc:tests) 目录下，而不是在主模块文件中。
+
+### 测试脚本命名
+- 使用 `test_` 前缀
+- 描述性名称，如 `test_4n_ground_state_product.py`
+- 避免在主模块中定义测试函数
+
+## 测试脚本结构
+
+### 基本模板
+```python
+#!/usr/bin/env python3
+"""
+测试描述
+"""
+
+import torch
+import time
+import sys
+import os
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from fastsim.vqe import (...)
+from fastsim.circuit import load_gates_from_config
+
+def test_function_name():
+    """测试函数描述"""
+    # 加载门配置
+    load_gates_from_config("../configs/gates_config.json")
+    
+    # 测试逻辑
+    pass
+
+if __name__ == "__main__":
+    # 运行测试
+    pass
+```
+
+### 路径处理
+- 使用相对路径 `../configs/gates_config.json` 而不是 `configs/gates_config.json`
+- 确保从tests目录运行时路径正确
+
+## 测试类型
+
+### 性能测试
+- 测试不同系统大小的收敛性
+- 比较不同初始态的效果
+- 分析计算时间和内存使用
+
+### 功能测试
+- 验证算法正确性
+- 检查数值一致性
+- 测试边界条件
+
+### 集成测试
+- 测试完整VQE流程
+- 验证模块间接口
+- 检查错误处理
+
+## 测试最佳实践
+
+### 设备管理
+- 自动检测可用设备（CPU/GPU）
+- 确保设备一致性
+- 处理设备间差异
+
+### 结果分析
+- 提供详细的性能指标
+- 比较不同方法的优劣
+- 生成可读的总结报告
+
+### 错误处理
+- 捕获并报告异常
+- 提供有意义的错误信息
+- 确保测试的健壮性
+
+## 运行测试
+
+### 从项目根目录
+```bash
+python tests/test_script_name.py
+```
+
+### 从tests目录
+```bash
+cd tests
+python test_script_name.py
+```
+
+### 使用pytest
+```bash
+pytest tests/test_script_name.py
+```
+
+## 注意事项
+- 测试脚本应该是独立的，不依赖主模块中的测试函数
+- 确保测试的可重复性
+- 提供清晰的输出和结果分析

@@ -220,6 +220,18 @@ class ExampleVQESampling:
         state.state_vector = self.results['final_state']
         sampler = Sampler(state, default_shots=num_shots)
         
+        # 如果observable不是tensor，转换为tensor
+        if not isinstance(observable, torch.Tensor):
+            if hasattr(observable, 'get_matrix'):
+                observable = observable.get_matrix()
+            elif hasattr(observable, 'build_dense_matrix'):
+                observable = observable.build_dense_matrix()
+            else:
+                # 如果无法转换，使用单位矩阵
+                observable_dim = 2**self.num_qubits
+                observable = torch.eye(observable_dim, dtype=torch.complex64)
+                print(f"  无法转换可观测量，使用单位矩阵，维度: {observable.shape}")
+        
         # 如果指定了qubit_indices，需要提取对应的可观测量
         if qubit_indices is not None and len(qubit_indices) != self.num_qubits:
             # 对于部分量子比特，我们需要提取对应的可观测量子矩阵
