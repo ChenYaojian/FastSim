@@ -68,9 +68,10 @@ class QuantumGate(ABC, nn.Module):
             single_state = state[i].view([2] * total_qubits)
             
             # 根据gate作用的qubits，将state vector permute，然后reshape
-            permute_order = list(range(total_qubits))
-            for j, qubit in enumerate(qubit_indices):
-                permute_order[j], permute_order[qubit] = permute_order[qubit], permute_order[j]
+            # 使前 len(qubit_indices) 维对应 qubit_indices 中的 qubit，顺序一致
+            permute_order = list(qubit_indices) + [
+                i for i in range(total_qubits) if i not in qubit_indices
+            ]
             
             # 计算逆置换
             inverse_permute_order = [0] * total_qubits
