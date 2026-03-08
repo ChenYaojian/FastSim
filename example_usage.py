@@ -72,7 +72,7 @@ def heisenberg_model_example():
     print("\n=== 海森堡模型示例 ===")
     
     # 创建4量子比特海森堡模型哈密顿量
-    H = hamiltonian.create_heisenberg_hamiltonian(4, J=1.0, h=0.5)
+    H = hamiltonian.create_hamiltonian("heisenberg", num_qubits=4, J=1.0, h=0.5, device="cuda")
     
     # 创建参数化量子电路
     pqc = vqe.build_pqc_u_cz(4, num_layers=2)
